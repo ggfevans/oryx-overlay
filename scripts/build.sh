@@ -25,6 +25,9 @@ done
 
 load_config
 [[ -f "$LAYOUT_DIR/keymap.c" ]] || die "layout/keymap.c missing. Run 'make sync' first."
+if cache_path_has_space; then
+  die "cache path contains whitespace, which breaks QMK's module include paths: $CACHE_DIR. $SPACE_HINT"
+fi
 MAJOR="$(fw_major)"
 if (( MAJOR < 24 )); then
   die "layout was compiled against firmware v$MAJOR; oryx-overlay needs v24+. Open it in Oryx and compile once to upgrade."

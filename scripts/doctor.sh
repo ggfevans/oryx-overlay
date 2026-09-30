@@ -30,6 +30,12 @@ printf '%sOther%s\n' "$C_B" "$C_0"
 check docker "container builds" optional
 check claude "Claude Code" optional
 
+if cache_path_has_space; then
+  printf '\n%sPaths%s  %s✗%s cache path contains whitespace, which breaks QMK builds: %s\n' "$C_B" "$C_0" "$C_R" "$C_0" "$CACHE_DIR"
+  printf '  %s\n' "$SPACE_HINT"
+  status=1
+fi
+
 if ! ( load_config ) >/dev/null 2>&1; then
   printf '\n%sConfig%s  oryx.conf is missing or incomplete:\n' "$C_B" "$C_0"
   ( load_config ) 2>&1 | sed 's/^/  /' || true

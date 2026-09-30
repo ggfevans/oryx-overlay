@@ -105,6 +105,23 @@ The viewer's **Lighting** tab (press `L`) is a picker for RGB Matrix effects. Or
 
 `docs/keymap.md` carries the same facts in text, so Claude Code can answer "which effects do I have?" or add one with `/qmk-feature`.
 
+### Idle screensaver
+
+Want layer colours while you type and an effect when you walk away? The bundled `oryx_overlay/screensaver` module switches to an effect after a few idle minutes and turns layer colours off, then puts both back on the next keypress. Nothing is saved to EEPROM. Moonlander, Voyager and Planck EZ, firmware v25+.
+
+```jsonc
+// custom/keymap.json
+{ "modules": ["oryx_overlay/screensaver"] }
+```
+
+```c
+// custom/config.h (both optional)
+#define SCREENSAVER_TIMEOUT 300000                   // ms idle before it starts (default 5 minutes)
+#define SCREENSAVER_MODE RGB_MATRIX_RAINBOW_PINWHEELS // default RGB_MATRIX_CYCLE_LEFT_RIGHT
+```
+
+Pick the effect in the Lighting tab; it has to be in your firmware. Oryx's RGB timeout must be longer than the screensaver delay (the build tells you if it isn't). A non-reactive effect works best, since nobody is typing.
+
 ## Working with Claude Code
 
 Open the repo in Claude Code and it reads `CLAUDE.md`: the ownership rules (Oryx owns key positions, `custom/` owns behaviour), the commands, and the guardrails. Three project skills handle the common jobs:

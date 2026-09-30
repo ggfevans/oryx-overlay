@@ -23,4 +23,9 @@ Which one to reach for, in order of preference:
    small and mark it `// [custom]`. Git carries it across Oryx syncs, and if
    Oryx rewrites the same lines you resolve a merge conflict.
 
-See `modules/example/hello_overlay/` for a minimal module.
+Bundled modules (off until you list them in `keymap.json`):
+
+| Module | Does |
+|---|---|
+| `example/hello_overlay` | A minimal example: Shift+Backspace sends Delete. |
+| `oryx_overlay/screensaver` | Runs an RGB effect while the keyboard is idle and hides Oryx layer colours, restoring both on the next keypress. Settings are at the top of `screensaver.c`. |

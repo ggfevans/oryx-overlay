@@ -1,0 +1,133 @@
+name: Build firmware
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "layout/**"
+      - "custom/**"
+      - "oryx.conf"
+      - "scripts/**"
+      - "requirements.txt"
+      - ".github/workflows/build.yml"
+  pull_request:
+    paths:
+      - "layout/**"
+      - "custom/**"
+      - "oryx.conf"
+      - "scripts/**"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          # When called from the sync workflow, build the branch head (with the new merge),
+          # not the commit that started the run.
+          ref: ${{ github.event_name == 'pull_request' && github.sha || github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            gcc-arm-none-eabi libnewlib-arm-none-eabi binutils-arm-none-eabi dfu-util
+          pip install -q -r requirements.txt
+
+      - name: Resolve firmware branch
+        id: fw
+        run: |
+          major=$(python3 -c 'import json; print(json.load(open("layout/.oryx.json"))["qmk_version"].split(".")[0])')
+          branch="firmware${major}"
+          sha=$(git ls-remote https://github.com/zsa/qmk_firmware.git "refs/heads/${branch}" | cut -f1)
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+          echo "sha=${sha:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache ZSA QMK tree
+        uses: actions/cache@v6
+        with:
+          path: .cache/qmk_firmware-${{ steps.fw.outputs.branch }}
+          key: qmk-${{ steps.fw.outputs.branch }}-${{ steps.fw.outputs.sha }}
+
+      - name: Build
+        run: scripts/build.sh
+
+      - name: Check lighting previews against this firmware
+        # Compiles QMK's own RGB effect code and compares it with the viewer's
+        # JavaScript port. Informational: a mismatch never blocks your firmware.
+        continue-on-error: true
+        run: |
+          pip install -q pytest
+          python -m pytest -q tests/test_rgb_effects.py
+
+      - name: Name the artifact
+        id: name
+        run: |
+          rev=$(python3 -c 'import json; print(json.load(open("layout/.oryx.json"))["revision"])')
+          fw=$(find build -maxdepth 1 \( -name '*.bin' -o -name '*.hex' \) | head -n1)
+          echo "file=${fw}" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "${fw%.*}")-${rev}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.name.outputs.name }}
+          path: |
+            ${{ steps.name.outputs.file }}
+            ${{ steps.name.outputs.file }}.sha256
+          if-no-files-found: error
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Firmware"
+            if [ -n "${{ steps.name.outputs.file }}" ]; then
+              echo "Download **${{ steps.name.outputs.name }}** from the artifacts above and flash it with [Keymapp](https://www.zsa.io/flash)."
+              echo
+              echo '```'
+              cat "${{ steps.name.outputs.file }}.sha256"
+              echo '```'
+            else
+              echo "Build failed. Last lines of build/build.log:"
+              echo '```'
+              tail -n 40 build/build.log 2>/dev/null || true
+              echo '```'
+            fi
+            if [ -f docs/keymap.md ]; then
+              echo
+              sed -n '/^## Checks/,/^## /p' docs/keymap.md | sed '$d'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit refreshed drawings
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          git add docs
+          if git diff --cached --quiet; then
+            echo "docs/ already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "docs: redraw keymap"
+          git pull --rebase --quiet origin main
+          git push --quiet origin HEAD:main

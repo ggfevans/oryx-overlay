@@ -1,0 +1,220 @@
+layers:
+  "L0":
+  - {"t": "="}
+  - {"t": "1"}
+  - {"t": "2"}
+  - {"t": "3"}
+  - {"t": "4"}
+  - {"t": "5"}
+  - {"t": "←"}
+  - {"t": "→"}
+  - {"t": "6"}
+  - {"t": "7"}
+  - {"t": "8"}
+  - {"t": "9"}
+  - {"t": "0"}
+  - {"t": "-"}
+  - {"t": "Del"}
+  - {"t": "Q"}
+  - {"t": "W"}
+  - {"t": "E"}
+  - {"t": "R"}
+  - {"t": "T"}
+  - {"t": "L1", "h": "toggle", "type": "layer"}
+  - {"t": "L1", "h": "toggle", "type": "layer"}
+  - {"t": "Y"}
+  - {"t": "U"}
+  - {"t": "I"}
+  - {"t": "O"}
+  - {"t": "P"}
+  - {"t": "\\"}
+  - {"t": "⌫"}
+  - {"t": "A"}
+  - {"t": "S"}
+  - {"t": "D"}
+  - {"t": "F"}
+  - {"t": "G"}
+  - {"t": "Hyper"}
+  - {"t": "Meh"}
+  - {"t": "H"}
+  - {"t": "J"}
+  - {"t": "K"}
+  - {"t": "L"}
+  - {"t": ";", "h": "L2", "type": "layer"}
+  - {"t": "'", "h": "Super", "type": "mod"}
+  - {"t": "Shift"}
+  - {"t": "Z", "h": "Ctrl", "type": "mod"}
+  - {"t": "X"}
+  - {"t": "C"}
+  - {"t": "V"}
+  - {"t": "B"}
+  - {"t": "N"}
+  - {"t": "M"}
+  - {"t": ","}
+  - {"t": "."}
+  - {"t": "/"}
+  - {"t": "Shift"}
+  - {"t": "`", "h": "L1", "type": "layer"}
+  - {"t": "Caps Word"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "←"}
+  - {"t": "→"}
+  - {"t": "Menu", "h": "Alt", "type": "mod"}
+  - {"t": "Esc", "h": "Ctrl", "type": "mod"}
+  - {"t": "↑"}
+  - {"t": "↓"}
+  - {"t": "["}
+  - {"t": "]", "h": "Ctrl", "type": "mod"}
+  - {"t": "L1", "type": "layer"}
+  - {"t": "Space"}
+  - {"t": "⌫"}
+  - {"t": "Super"}
+  - {"t": "Alt"}
+  - {"t": "Tab"}
+  - {"t": "Enter"}
+  "L1":
+  - {"t": "Esc"}
+  - {"t": "F1"}
+  - {"t": "F2"}
+  - {"t": "F3"}
+  - {"t": "F4"}
+  - {"t": "F5"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "F6"}
+  - {"t": "F7"}
+  - {"t": "F8"}
+  - {"t": "F9"}
+  - {"t": "F10"}
+  - {"t": "F11"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "!"}
+  - {"t": "@"}
+  - {"t": "{"}
+  - {"t": "}"}
+  - {"t": "|"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "↑"}
+  - {"t": "7"}
+  - {"t": "8"}
+  - {"t": "9"}
+  - {"t": "*"}
+  - {"t": "F12"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "#"}
+  - {"t": "$"}
+  - {"t": "("}
+  - {"t": ")"}
+  - {"t": "`"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "↓"}
+  - {"t": "4"}
+  - {"t": "5"}
+  - {"t": "6"}
+  - {"t": "+"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "^"}
+  - {"t": "["}
+  - {"t": "]"}
+  - {"t": "~"}
+  - {"t": "&"}
+  - {"t": "1"}
+  - {"t": "2"}
+  - {"t": "3"}
+  - {"t": "\\"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans held"}
+  - {"t": ","}
+  - {"t": "Colour"}
+  - {"t": "Colour"}
+  - {"t": "Colour"}
+  - {"t": "RGB Mode"}
+  - {"t": "RGB"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "."}
+  - {"t": "0"}
+  - {"t": "="}
+  - {"t": "▽", "type": "trans held"}
+  - {"t": "RGB Bri−"}
+  - {"t": "RGB Bri+"}
+  - {"t": "Layer LEDs"}
+  - {"t": "RGB Solid"}
+  - {"t": "Hue−"}
+  - {"t": "Hue+"}
+  "L2":
+  - {"t": "Audio"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "Boot"}
+  - {"t": "Music"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "M↑"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "Music Mode"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "M←"}
+  - {"t": "M↓"}
+  - {"t": "M→"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans held"}
+  - {"t": "Play"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "Prev"}
+  - {"t": "Next"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "Click"}
+  - {"t": "R-Click"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "Vol+"}
+  - {"t": "Vol−"}
+  - {"t": "Mute"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "▽", "type": "trans"}
+  - {"t": "Back"}

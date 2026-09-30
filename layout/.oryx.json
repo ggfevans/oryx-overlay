@@ -1,0 +1,23 @@
+{
+  "layout_id": "default",
+  "title": "Moonlander Default Layout",
+  "geometry": "moonlander",
+  "revision": "x9m4dK",
+  "revision_created": "2025-12-09 14:22:24 UTC",
+  "qmk_version": "25.0",
+  "change_note": "Keyboard layout edited.",
+  "layers": [
+    {
+      "position": 0,
+      "title": "Layer"
+    },
+    {
+      "position": 1,
+      "title": "Layer"
+    },
+    {
+      "position": 2,
+      "title": "Layer"
+    }
+  ]
+}

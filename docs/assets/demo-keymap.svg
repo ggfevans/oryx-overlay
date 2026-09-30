@@ -1,0 +1,1063 @@
+<svg width="2092" height="980" viewBox="0 0 2092 980" class="keymap" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<style>/* inherit to force styles through use tags */
+svg path {
+    fill: inherit;
+}
+
+/* font and background color specifications */
+svg.keymap {
+    font-family: SFMono-Regular,Consolas,Liberation Mono,Menlo,monospace;
+    font-size: 14px;
+    font-kerning: normal;
+    text-rendering: optimizeLegibility;
+    fill: #24292e;
+}
+
+/* default key styling */
+rect.key {
+    fill: #f6f8fa;
+}
+
+rect.key, rect.combo {
+    stroke: #c9cccf;
+    stroke-width: 1;
+}
+
+/* default key side styling, only used is draw_key_sides is set */
+rect.side {
+    filter: brightness(90%);
+}
+
+/* color accent for combo boxes */
+rect.combo, rect.combo-separate {
+    fill: #cdf;
+}
+
+/* color accent for held keys */
+rect.held, rect.combo.held {
+    fill: #fdd;
+}
+
+/* color accent for ghost (optional) keys */
+rect.ghost, rect.combo.ghost {
+    stroke-dasharray: 4, 4;
+    stroke-width: 2;
+}
+
+text {
+    text-anchor: middle;
+    dominant-baseline: middle;
+}
+
+/* styling for layer labels */
+text.label {
+    font-weight: bold;
+    text-anchor: start;
+    stroke: white;
+    stroke-width: 4;
+    paint-order: stroke;
+}
+
+/* styling for optional footer */
+text.footer {
+    text-anchor: end;
+    dominant-baseline: auto;
+    stroke: white;
+    stroke-width: 4;
+    paint-order: stroke;
+}
+
+/* styling for combo tap, and key non-tap label text */
+text.combo, text.hold, text.shifted, text.left, text.right {
+    font-size: 11px;
+}
+
+text.hold {
+    text-anchor: middle;
+    dominant-baseline: auto;
+}
+
+text.shifted {
+    text-anchor: middle;
+    dominant-baseline: hanging;
+}
+
+text.left {
+    text-anchor: start;
+}
+
+text.right {
+    text-anchor: end;
+}
+
+text.layer-activator {
+    text-decoration: underline;
+}
+
+/* styling for hold/shifted label text in combo box */
+text.combo.hold, text.combo.shifted, text.combo.left, text.combo.right {
+    font-size: 8px;
+}
+
+/* lighter symbol for transparent keys */
+text.trans {
+    fill: #7b7e81;
+}
+
+/* styling for combo dendrons */
+path.combo {
+    stroke-width: 1;
+    stroke: gray;
+    fill: none;
+}
+
+/* Start Tabler Icons Cleanup */
+/* cannot use height/width with glyphs */
+.icon-tabler > path {
+    fill: inherit;
+    stroke: inherit;
+    stroke-width: 2;
+}
+/* hide tabler's default box */
+.icon-tabler > path[stroke="none"][fill="none"] {
+    visibility: hidden;
+}
+/* End Tabler Icons Cleanup */
+
+@media (prefers-color-scheme: dark) {
+svg.keymap { fill: #d1d6db; }
+rect.key { fill: #3f4750; }
+rect.key, rect.combo { stroke: #60666c; }
+rect.combo, rect.combo-separate { fill: #1f3d7a; }
+rect.held, rect.combo.held { fill: #854747; }
+text.label, text.footer { stroke: black; }
+text.trans { fill: #7e8184; }
+path.combo { stroke: #7f7f7f; }
+
+}
+
+/* oryx-overlay: keys are tinted with the colour Oryx lights them */
+svg.keymap { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; }
+text.label { font-size: 15px; font-weight: 700; letter-spacing: 0.02em; }
+text.hold { font-size: 9.5px; letter-spacing: 0.03em; opacity: 0.75; }
+text.footer { font-size: 12px; opacity: 0.6; }
+rect.key { stroke-width: 1; }
+rect.key.trans { opacity: 0.55; }
+text.trans { opacity: 0.45; }
+rect.key.layer { stroke: #6d5dfc; stroke-width: 2; }
+
+rect.key.led-37ff37, rect.key.led-37ff37.held { fill: rgba(55,255,55,0.30); stroke: rgba(55,255,55,0.95); stroke-width: 1.5; opacity: 1; }
+rect.key.led-37ffdc, rect.key.led-37ffdc.held { fill: rgba(55,255,220,0.30); stroke: rgba(55,255,220,0.95); stroke-width: 1.5; opacity: 1; }
+rect.key.led-55a5ff, rect.key.led-55a5ff.held { fill: rgba(85,165,255,0.30); stroke: rgba(85,165,255,0.95); stroke-width: 1.5; opacity: 1; }
+rect.key.led-ae5fff, rect.key.led-ae5fff.held { fill: rgba(174,95,255,0.30); stroke: rgba(174,95,255,0.95); stroke-width: 1.5; opacity: 1; }
+rect.key.led-ff55d9, rect.key.led-ff55d9.held { fill: rgba(255,85,217,0.30); stroke: rgba(255,85,217,0.95); stroke-width: 1.5; opacity: 1; }
+rect.key.led-ff6541, rect.key.led-ff6541.held { fill: rgba(255,101,65,0.30); stroke: rgba(255,101,65,0.95); stroke-width: 1.5; opacity: 1; }
+rect.key.led-ffa800, rect.key.led-ffa800.held { fill: rgba(255,168,0,0.30); stroke: rgba(255,168,0,0.95); stroke-width: 1.5; opacity: 1; }</style>
+<g transform="translate(30, 0)" class="layer-Base">
+<text x="0" y="28" class="label" id="Base">Base</text>
+<g transform="translate(0, 56)">
+<g transform="translate(29, 51)" class="key keypos-0">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">=</text>
+</g>
+<g transform="translate(87, 51)" class="key led-ffa800 keypos-1">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">1</text>
+</g>
+<g transform="translate(145, 36)" class="key led-ffa800 keypos-2">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">2</text>
+</g>
+<g transform="translate(203, 29)" class="key led-ffa800 keypos-3">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">3</text>
+</g>
+<g transform="translate(261, 36)" class="key led-ffa800 keypos-4">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">4</text>
+</g>
+<g transform="translate(319, 44)" class="key led-ffa800 keypos-5">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">5</text>
+</g>
+<g transform="translate(377, 44)" class="key led-37ffdc keypos-6">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">←</text>
+</g>
+<g transform="translate(609, 44)" class="key led-37ffdc keypos-7">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">→</text>
+</g>
+<g transform="translate(667, 44)" class="key led-ffa800 keypos-8">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">6</text>
+</g>
+<g transform="translate(725, 36)" class="key led-ffa800 keypos-9">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">7</text>
+</g>
+<g transform="translate(783, 29)" class="key led-ffa800 keypos-10">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">8</text>
+</g>
+<g transform="translate(841, 36)" class="key led-ffa800 keypos-11">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">9</text>
+</g>
+<g transform="translate(899, 51)" class="key led-ffa800 keypos-12">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">0</text>
+</g>
+<g transform="translate(957, 51)" class="key keypos-13">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">-</text>
+</g>
+<g transform="translate(29, 109)" class="key led-ff6541 keypos-14">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ff6541"/>
+<text x="0" y="0" class="key led-ff6541 tap">Del</text>
+</g>
+<g transform="translate(87, 109)" class="key keypos-15">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">Q</text>
+</g>
+<g transform="translate(145, 94)" class="key keypos-16">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">W</text>
+</g>
+<g transform="translate(203, 87)" class="key keypos-17">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">E</text>
+</g>
+<g transform="translate(261, 94)" class="key keypos-18">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">R</text>
+</g>
+<g transform="translate(319, 102)" class="key keypos-19">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">T</text>
+</g>
+<g transform="translate(377, 102)" class="key layer led-ff55d9 keypos-20">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key layer led-ff55d9"/>
+<a href="#Symbols">
+<text x="0" y="0" class="key layer led-ff55d9 tap layer-activator">Symbols</text>
+</a><text x="0" y="25" class="key layer led-ff55d9 hold">toggle</text>
+</g>
+<g transform="translate(609, 102)" class="key layer led-ff55d9 keypos-21">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key layer led-ff55d9"/>
+<a href="#Symbols">
+<text x="0" y="0" class="key layer led-ff55d9 tap layer-activator">Symbols</text>
+</a><text x="0" y="25" class="key layer led-ff55d9 hold">toggle</text>
+</g>
+<g transform="translate(667, 102)" class="key keypos-22">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">Y</text>
+</g>
+<g transform="translate(725, 94)" class="key keypos-23">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">U</text>
+</g>
+<g transform="translate(783, 87)" class="key keypos-24">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">I</text>
+</g>
+<g transform="translate(841, 94)" class="key keypos-25">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">O</text>
+</g>
+<g transform="translate(899, 109)" class="key keypos-26">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">P</text>
+</g>
+<g transform="translate(957, 109)" class="key keypos-27">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">\</text>
+</g>
+<g transform="translate(29, 167)" class="key led-ff6541 keypos-28">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ff6541"/>
+<text x="0" y="0" class="key led-ff6541 tap">⌫</text>
+</g>
+<g transform="translate(87, 167)" class="key keypos-29">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">A</text>
+</g>
+<g transform="translate(145, 152)" class="key keypos-30">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">S</text>
+</g>
+<g transform="translate(203, 145)" class="key keypos-31">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">D</text>
+</g>
+<g transform="translate(261, 152)" class="key keypos-32">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">F</text>
+</g>
+<g transform="translate(319, 160)" class="key keypos-33">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">G</text>
+</g>
+<g transform="translate(377, 160)" class="key led-ae5fff keypos-34">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ae5fff"/>
+<text x="0" y="0" class="key led-ae5fff tap">Hyper</text>
+</g>
+<g transform="translate(609, 160)" class="key led-ae5fff keypos-35">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ae5fff"/>
+<text x="0" y="0" class="key led-ae5fff tap">Meh</text>
+</g>
+<g transform="translate(667, 160)" class="key keypos-36">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">H</text>
+</g>
+<g transform="translate(725, 152)" class="key keypos-37">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">J</text>
+</g>
+<g transform="translate(783, 145)" class="key keypos-38">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">K</text>
+</g>
+<g transform="translate(841, 152)" class="key keypos-39">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">L</text>
+</g>
+<g transform="translate(899, 167)" class="key layer led-ff55d9 keypos-40">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key layer led-ff55d9"/>
+<text x="0" y="0" class="key layer led-ff55d9 tap">;</text>
+<a href="#Media">
+<text x="0" y="25" class="key layer led-ff55d9 hold layer-activator">Media</text>
+</a></g>
+<g transform="translate(957, 167)" class="key mod led-ae5fff keypos-41">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key mod led-ae5fff"/>
+<text x="0" y="0" class="key mod led-ae5fff tap">&#x27;</text>
+<text x="0" y="25" class="key mod led-ae5fff hold">⌘</text>
+</g>
+<g transform="translate(29, 225)" class="key led-ae5fff keypos-42">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ae5fff"/>
+<text x="0" y="0" class="key led-ae5fff tap">⇧</text>
+</g>
+<g transform="translate(87, 225)" class="key mod led-ae5fff keypos-43">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key mod led-ae5fff"/>
+<text x="0" y="0" class="key mod led-ae5fff tap">Z</text>
+<text x="0" y="25" class="key mod led-ae5fff hold">⌃</text>
+</g>
+<g transform="translate(145, 210)" class="key keypos-44">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">X</text>
+</g>
+<g transform="translate(203, 203)" class="key keypos-45">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">C</text>
+</g>
+<g transform="translate(261, 210)" class="key keypos-46">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">V</text>
+</g>
+<g transform="translate(319, 218)" class="key keypos-47">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">B</text>
+</g>
+<g transform="translate(667, 218)" class="key keypos-48">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">N</text>
+</g>
+<g transform="translate(725, 210)" class="key keypos-49">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">M</text>
+</g>
+<g transform="translate(783, 203)" class="key keypos-50">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">,</text>
+</g>
+<g transform="translate(841, 210)" class="key keypos-51">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">.</text>
+</g>
+<g transform="translate(899, 225)" class="key keypos-52">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">/</text>
+</g>
+<g transform="translate(957, 225)" class="key led-ae5fff keypos-53">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ae5fff"/>
+<text x="0" y="0" class="key led-ae5fff tap">⇧</text>
+</g>
+<g transform="translate(29, 283)" class="key layer led-ff55d9 keypos-54">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key layer led-ff55d9"/>
+<text x="0" y="0" class="key layer led-ff55d9 tap">`</text>
+<a href="#Symbols">
+<text x="0" y="25" class="key layer led-ff55d9 hold layer-activator">Symbols</text>
+</a></g>
+<g transform="translate(87, 283)" class="key led-ae5fff keypos-55">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ae5fff"/>
+<text x="0" y="0" class="key led-ae5fff tap">
+<tspan x="0" dy="-0.6em">Caps</tspan><tspan x="0" dy="1.2em">Word</tspan>
+</text>
+</g>
+<g transform="translate(145, 268)" class="key trans keypos-56">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(203, 261)" class="key led-37ffdc keypos-57">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">←</text>
+</g>
+<g transform="translate(261, 268)" class="key led-37ffdc keypos-58">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">→</text>
+</g>
+<g transform="translate(348, 290)" class="key mod led-ae5fff keypos-59">
+<rect rx="7" ry="7" x="-56" y="-27" width="112" height="54" class="key mod led-ae5fff"/>
+<text x="0" y="0" class="key mod led-ae5fff tap">Menu</text>
+<text x="0" y="25" class="key mod led-ae5fff hold">⌥</text>
+</g>
+<g transform="translate(638, 290)" class="key mod led-ae5fff keypos-60">
+<rect rx="7" ry="7" x="-56" y="-27" width="112" height="54" class="key mod led-ae5fff"/>
+<text x="0" y="0" class="key mod led-ae5fff tap">Esc</text>
+<text x="0" y="25" class="key mod led-ae5fff hold">⌃</text>
+</g>
+<g transform="translate(725, 268)" class="key led-37ffdc keypos-61">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">↑</text>
+</g>
+<g transform="translate(783, 261)" class="key led-37ffdc keypos-62">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">↓</text>
+</g>
+<g transform="translate(841, 268)" class="key keypos-63">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
+<text x="0" y="0" class="key tap">[</text>
+</g>
+<g transform="translate(899, 283)" class="key mod led-ae5fff keypos-64">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key mod led-ae5fff"/>
+<text x="0" y="0" class="key mod led-ae5fff tap">]</text>
+<text x="0" y="25" class="key mod led-ae5fff hold">⌃</text>
+</g>
+<g transform="translate(957, 283)" class="key layer led-ff55d9 keypos-65">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key layer led-ff55d9"/>
+<a href="#Symbols">
+<text x="0" y="0" class="key layer led-ff55d9 tap layer-activator">Symbols</text>
+</a></g>
+<g transform="translate(319, 362)" class="key led-ff6541 keypos-66">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key led-ff6541"/>
+<text x="0" y="0" class="key led-ff6541 tap">Space</text>
+</g>
+<g transform="translate(377, 362)" class="key led-ff6541 keypos-67">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key led-ff6541"/>
+<text x="0" y="0" class="key led-ff6541 tap">⌫</text>
+</g>
+<g transform="translate(435, 362)" class="key led-ae5fff keypos-68">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key led-ae5fff"/>
+<text x="0" y="0" class="key led-ae5fff tap">⌘</text>
+</g>
+<g transform="translate(551, 362)" class="key led-ae5fff keypos-69">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key led-ae5fff"/>
+<text x="0" y="0" class="key led-ae5fff tap">⌥</text>
+</g>
+<g transform="translate(609, 362)" class="key led-ff6541 keypos-70">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key led-ff6541"/>
+<text x="0" y="0" class="key led-ff6541 tap">Tab</text>
+</g>
+<g transform="translate(667, 362)" class="key led-ff6541 keypos-71">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key led-ff6541"/>
+<text x="0" y="0" class="key led-ff6541 tap">Enter</text>
+</g>
+</g>
+</g>
+<g transform="translate(1076, 0)" class="layer-Symbols">
+<text x="0" y="28" class="label" id="Symbols">Symbols</text>
+<g transform="translate(0, 56)">
+<g transform="translate(29, 51)" class="key led-ff6541 keypos-0">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ff6541"/>
+<text x="0" y="0" class="key led-ff6541 tap">Esc</text>
+</g>
+<g transform="translate(87, 51)" class="key led-55a5ff keypos-1">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">F1</text>
+</g>
+<g transform="translate(145, 36)" class="key led-55a5ff keypos-2">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">F2</text>
+</g>
+<g transform="translate(203, 29)" class="key led-55a5ff keypos-3">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">F3</text>
+</g>
+<g transform="translate(261, 36)" class="key led-55a5ff keypos-4">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">F4</text>
+</g>
+<g transform="translate(319, 44)" class="key led-55a5ff keypos-5">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">F5</text>
+</g>
+<g transform="translate(377, 44)" class="key trans keypos-6">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(609, 44)" class="key trans keypos-7">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(667, 44)" class="key led-55a5ff keypos-8">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">F6</text>
+</g>
+<g transform="translate(725, 36)" class="key led-55a5ff keypos-9">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">F7</text>
+</g>
+<g transform="translate(783, 29)" class="key led-55a5ff keypos-10">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">F8</text>
+</g>
+<g transform="translate(841, 36)" class="key led-55a5ff keypos-11">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">F9</text>
+</g>
+<g transform="translate(899, 51)" class="key led-55a5ff keypos-12">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">F10</text>
+</g>
+<g transform="translate(957, 51)" class="key led-55a5ff keypos-13">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">F11</text>
+</g>
+<g transform="translate(29, 109)" class="key trans keypos-14">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(87, 109)" class="key led-55a5ff keypos-15">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">!</text>
+</g>
+<g transform="translate(145, 94)" class="key led-55a5ff keypos-16">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">@</text>
+</g>
+<g transform="translate(203, 87)" class="key led-55a5ff keypos-17">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">{</text>
+</g>
+<g transform="translate(261, 94)" class="key led-55a5ff keypos-18">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">}</text>
+</g>
+<g transform="translate(319, 102)" class="key led-55a5ff keypos-19">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">|</text>
+</g>
+<g transform="translate(377, 102)" class="key trans keypos-20">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(609, 102)" class="key trans keypos-21">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(667, 102)" class="key led-37ffdc keypos-22">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">↑</text>
+</g>
+<g transform="translate(725, 94)" class="key led-ffa800 keypos-23">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">7</text>
+</g>
+<g transform="translate(783, 87)" class="key led-ffa800 keypos-24">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">8</text>
+</g>
+<g transform="translate(841, 94)" class="key led-ffa800 keypos-25">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">9</text>
+</g>
+<g transform="translate(899, 109)" class="key led-ffa800 keypos-26">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">*</text>
+</g>
+<g transform="translate(957, 109)" class="key led-55a5ff keypos-27">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">F12</text>
+</g>
+<g transform="translate(29, 167)" class="key trans keypos-28">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(87, 167)" class="key led-55a5ff keypos-29">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">#</text>
+</g>
+<g transform="translate(145, 152)" class="key led-55a5ff keypos-30">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">$</text>
+</g>
+<g transform="translate(203, 145)" class="key led-55a5ff keypos-31">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">(</text>
+</g>
+<g transform="translate(261, 152)" class="key led-55a5ff keypos-32">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">)</text>
+</g>
+<g transform="translate(319, 160)" class="key led-55a5ff keypos-33">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">`</text>
+</g>
+<g transform="translate(377, 160)" class="key trans keypos-34">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(609, 160)" class="key trans keypos-35">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(667, 160)" class="key led-37ffdc keypos-36">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">↓</text>
+</g>
+<g transform="translate(725, 152)" class="key led-ffa800 keypos-37">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">4</text>
+</g>
+<g transform="translate(783, 145)" class="key led-ffa800 keypos-38">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">5</text>
+</g>
+<g transform="translate(841, 152)" class="key led-ffa800 keypos-39">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">6</text>
+</g>
+<g transform="translate(899, 167)" class="key led-ffa800 keypos-40">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">+</text>
+</g>
+<g transform="translate(957, 167)" class="key trans keypos-41">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(29, 225)" class="key trans keypos-42">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(87, 225)" class="key trans keypos-43">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(145, 210)" class="key led-55a5ff keypos-44">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">^</text>
+</g>
+<g transform="translate(203, 203)" class="key led-55a5ff keypos-45">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">[</text>
+</g>
+<g transform="translate(261, 210)" class="key led-55a5ff keypos-46">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">]</text>
+</g>
+<g transform="translate(319, 218)" class="key led-55a5ff keypos-47">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">~</text>
+</g>
+<g transform="translate(667, 218)" class="key led-55a5ff keypos-48">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">&amp;</text>
+</g>
+<g transform="translate(725, 210)" class="key led-ffa800 keypos-49">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">1</text>
+</g>
+<g transform="translate(783, 203)" class="key led-ffa800 keypos-50">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">2</text>
+</g>
+<g transform="translate(841, 210)" class="key led-ffa800 keypos-51">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">3</text>
+</g>
+<g transform="translate(899, 225)" class="key led-55a5ff keypos-52">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">\</text>
+</g>
+<g transform="translate(957, 225)" class="key trans keypos-53">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(29, 283)" class="key trans held keypos-54">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans held"/>
+<text x="0" y="0" class="key trans held tap">▽</text>
+</g>
+<g transform="translate(87, 283)" class="key led-55a5ff keypos-55">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-55a5ff"/>
+<text x="0" y="0" class="key led-55a5ff tap">,</text>
+</g>
+<g transform="translate(145, 268)" class="key led-37ff37 keypos-56">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">Colour</text>
+</g>
+<g transform="translate(203, 261)" class="key led-37ff37 keypos-57">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">Colour</text>
+</g>
+<g transform="translate(261, 268)" class="key led-37ff37 keypos-58">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">Colour</text>
+</g>
+<g transform="translate(348, 290)" class="key led-37ff37 keypos-59">
+<rect rx="7" ry="7" x="-56" y="-27" width="112" height="54" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">
+<tspan x="0" dy="-0.6em">RGB</tspan><tspan x="0" dy="1.2em">Mode</tspan>
+</text>
+</g>
+<g transform="translate(638, 290)" class="key led-37ff37 keypos-60">
+<rect rx="7" ry="7" x="-56" y="-27" width="112" height="54" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">RGB</text>
+</g>
+<g transform="translate(725, 268)" class="key trans keypos-61">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(783, 261)" class="key led-ffa800 keypos-62">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">.</text>
+</g>
+<g transform="translate(841, 268)" class="key led-ffa800 keypos-63">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">0</text>
+</g>
+<g transform="translate(899, 283)" class="key led-ffa800 keypos-64">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-ffa800"/>
+<text x="0" y="0" class="key led-ffa800 tap">=</text>
+</g>
+<g transform="translate(957, 283)" class="key trans held keypos-65">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans held"/>
+<text x="0" y="0" class="key trans held tap">▽</text>
+</g>
+<g transform="translate(319, 362)" class="key led-37ff37 keypos-66">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">
+<tspan x="0" dy="-0.6em">RGB</tspan><tspan x="0" dy="1.2em">Bri−</tspan>
+</text>
+</g>
+<g transform="translate(377, 362)" class="key led-37ff37 keypos-67">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">
+<tspan x="0" dy="-0.6em">RGB</tspan><tspan x="0" dy="1.2em">Bri+</tspan>
+</text>
+</g>
+<g transform="translate(435, 362)" class="key led-37ff37 keypos-68">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">
+<tspan x="0" dy="-0.6em">Layer</tspan><tspan x="0" dy="1.2em">LEDs</tspan>
+</text>
+</g>
+<g transform="translate(551, 362)" class="key led-37ff37 keypos-69">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">
+<tspan x="0" dy="-0.6em">RGB</tspan><tspan x="0" dy="1.2em">Solid</tspan>
+</text>
+</g>
+<g transform="translate(609, 362)" class="key led-37ff37 keypos-70">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">Hue−</text>
+</g>
+<g transform="translate(667, 362)" class="key led-37ff37 keypos-71">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">Hue+</text>
+</g>
+</g>
+</g>
+<g transform="translate(30, 462)" class="layer-Media">
+<text x="0" y="28" class="label" id="Media">Media</text>
+<g transform="translate(0, 56)">
+<g transform="translate(29, 51)" class="key led-37ff37 keypos-0">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">Audio</text>
+</g>
+<g transform="translate(87, 51)" class="key trans keypos-1">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(145, 36)" class="key trans keypos-2">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(203, 29)" class="key trans keypos-3">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(261, 36)" class="key trans keypos-4">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(319, 44)" class="key trans keypos-5">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(377, 44)" class="key trans keypos-6">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(609, 44)" class="key trans keypos-7">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(667, 44)" class="key trans keypos-8">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(725, 36)" class="key trans keypos-9">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(783, 29)" class="key trans keypos-10">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(841, 36)" class="key trans keypos-11">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(899, 51)" class="key trans keypos-12">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(957, 51)" class="key led-37ff37 keypos-13">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">Boot</text>
+</g>
+<g transform="translate(29, 109)" class="key led-37ff37 keypos-14">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">Music</text>
+</g>
+<g transform="translate(87, 109)" class="key trans keypos-15">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(145, 94)" class="key trans keypos-16">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(203, 87)" class="key led-37ffdc keypos-17">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">M↑</text>
+</g>
+<g transform="translate(261, 94)" class="key trans keypos-18">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(319, 102)" class="key trans keypos-19">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(377, 102)" class="key trans keypos-20">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(609, 102)" class="key trans keypos-21">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(667, 102)" class="key trans keypos-22">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(725, 94)" class="key trans keypos-23">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(783, 87)" class="key trans keypos-24">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(841, 94)" class="key trans keypos-25">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(899, 109)" class="key trans keypos-26">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(957, 109)" class="key trans keypos-27">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(29, 167)" class="key led-37ff37 keypos-28">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">
+<tspan x="0" dy="-0.6em">Music</tspan><tspan x="0" dy="1.2em">Mode</tspan>
+</text>
+</g>
+<g transform="translate(87, 167)" class="key trans keypos-29">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(145, 152)" class="key led-37ffdc keypos-30">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">M←</text>
+</g>
+<g transform="translate(203, 145)" class="key led-37ffdc keypos-31">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">M↓</text>
+</g>
+<g transform="translate(261, 152)" class="key led-37ffdc keypos-32">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">M→</text>
+</g>
+<g transform="translate(319, 160)" class="key trans keypos-33">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(377, 160)" class="key trans keypos-34">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(609, 160)" class="key trans keypos-35">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(667, 160)" class="key trans keypos-36">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(725, 152)" class="key trans keypos-37">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(783, 145)" class="key trans keypos-38">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(841, 152)" class="key trans keypos-39">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(899, 167)" class="key trans held keypos-40">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans held"/>
+<text x="0" y="0" class="key trans held tap">▽</text>
+</g>
+<g transform="translate(957, 167)" class="key led-37ff37 keypos-41">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">Play</text>
+</g>
+<g transform="translate(29, 225)" class="key trans keypos-42">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(87, 225)" class="key trans keypos-43">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(145, 210)" class="key trans keypos-44">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(203, 203)" class="key trans keypos-45">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(261, 210)" class="key trans keypos-46">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(319, 218)" class="key trans keypos-47">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(667, 218)" class="key trans keypos-48">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(725, 210)" class="key trans keypos-49">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(783, 203)" class="key led-37ff37 keypos-50">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">Prev</text>
+</g>
+<g transform="translate(841, 210)" class="key led-37ff37 keypos-51">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">Next</text>
+</g>
+<g transform="translate(899, 225)" class="key trans keypos-52">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(957, 225)" class="key trans keypos-53">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(29, 283)" class="key trans keypos-54">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(87, 283)" class="key trans keypos-55">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(145, 268)" class="key trans keypos-56">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(203, 261)" class="key led-37ffdc keypos-57">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">Click</text>
+</g>
+<g transform="translate(261, 268)" class="key led-37ffdc keypos-58">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">R-Click</text>
+</g>
+<g transform="translate(348, 290)" class="key trans keypos-59">
+<rect rx="7" ry="7" x="-56" y="-27" width="112" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(638, 290)" class="key trans keypos-60">
+<rect rx="7" ry="7" x="-56" y="-27" width="112" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(725, 268)" class="key led-37ffdc keypos-61">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">Vol+</text>
+</g>
+<g transform="translate(783, 261)" class="key led-37ffdc keypos-62">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ffdc"/>
+<text x="0" y="0" class="key led-37ffdc tap">Vol−</text>
+</g>
+<g transform="translate(841, 268)" class="key led-37ff37 keypos-63">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">Mute</text>
+</g>
+<g transform="translate(899, 283)" class="key trans keypos-64">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(957, 283)" class="key trans keypos-65">
+<rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(319, 362)" class="key trans keypos-66">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(377, 362)" class="key trans keypos-67">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(435, 362)" class="key trans keypos-68">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(551, 362)" class="key trans keypos-69">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(609, 362)" class="key trans keypos-70">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key trans"/>
+<text x="0" y="0" class="key trans tap">▽</text>
+</g>
+<g transform="translate(667, 362)" class="key led-37ff37 keypos-71">
+<rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key led-37ff37"/>
+<text x="0" y="0" class="key led-37ff37 tap">Back</text>
+</g>
+</g>
+</g>
+<text x="2062.0" y="952.0" class="footer">Moonlander (demo colours) · firmware v25.0 · drawn by oryx-overlay + keymap-drawer</text></svg>

@@ -1,0 +1,3 @@
+# Python tools for local builds and drawings (installed by `make setup`).
+qmk>=1.1
+keymap-drawer>=0.21

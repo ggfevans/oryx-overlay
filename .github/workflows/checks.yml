@@ -4,9 +4,9 @@ name: Checks
 on:
   push:
     branches: [main]
-    paths: ["scripts/**", "tests/**", ".github/workflows/**", "Makefile"]
+    paths: ["scripts/**", "tests/**", ".github/workflows/**", "Makefile", "custom/modules/**"]
   pull_request:
-    paths: ["scripts/**", "tests/**", ".github/workflows/**", "Makefile"]
+    paths: ["scripts/**", "tests/**", ".github/workflows/**", "Makefile", "custom/modules/**"]
   workflow_dispatch:
 
 permissions:

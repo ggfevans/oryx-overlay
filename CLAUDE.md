@@ -20,7 +20,7 @@ The user edits keys in Oryx. You help with everything around that: syncing, QMK 
 | `scripts/` | Tooling | `sync.sh`, `build.sh`, `render.sh`, `oryx_layout.py`, `oryx_fetch.py`. |
 | `.cache/qmk_firmware-firmwareNN/` | Generated | ZSA's QMK fork at the layout's firmware version. Read it to check what a feature supports; never edit it. |
 
-For lighting questions, read the `## Lighting` section of `docs/keymap.md`: which effects are in the firmware, the RGB Mode and Toggle Layer Colors keys, and whether Oryx layer colours hide effects. To add an effect, the user can tick it in Oryx (Advanced Settings › RGB), or you add `#define ENABLE_RGB_MATRIX_<NAME>` to `custom/config.h`.
+For lighting questions, read the `## Lighting` section of `docs/keymap.md`: which effects are in the firmware, the RGB Mode and Toggle Layer Colors keys, and whether Oryx layer colours hide effects. To add an effect, the user can tick it in Oryx (Advanced Settings › RGB), or you add `#define ENABLE_RGB_MATRIX_<NAME>` to `custom/config.h`. For an effect only while idle, with layer colours the rest of the time, enable the `oryx_overlay/screensaver` module in `custom/keymap.json` and set `SCREENSAVER_TIMEOUT` / `SCREENSAVER_MODE` in `custom/config.h`.
 
 Positions like `L2.3` mean left half, row 2, fourth key from the left in that half-row (all 0-based), matching the grids in `docs/keymap.md` and the sync commit messages. Use them, plus the key legend, when telling the user which key to change in Oryx.
 

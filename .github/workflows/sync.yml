@@ -1,0 +1,57 @@
+name: Sync from Oryx
+
+on:
+  workflow_dispatch:
+  # Uncomment to check Oryx for changes on a schedule (times are UTC):
+  # schedule:
+  #   - cron: "17 */6 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Sync
+        id: sync
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          scripts/sync.sh --push --ci
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            if [ "${{ steps.sync.outcome }}" = "success" ]; then
+              echo "## Synced from Oryx"
+              echo
+              git log -1 --format='%B' oryx
+            else
+              echo "## Sync stopped"
+              echo
+              echo "Oryx's latest export conflicts with your edits in \`layout/\` (or the fetch failed; see the log)."
+              echo "The new export is on the \`oryx\` branch. Resolve locally with \`make sync\`, or ask Claude Code: \`/oryx-sync\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: sync
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: write

@@ -1,0 +1,30 @@
+name: Checks
+
+# Lints and tests the tooling itself (not your layout).
+on:
+  push:
+    branches: [main]
+    paths: ["scripts/**", "tests/**", ".github/workflows/**", "Makefile"]
+  pull_request:
+    paths: ["scripts/**", "tests/**", ".github/workflows/**", "Makefile"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install linters
+        run: pip install -q pytest shellcheck-py actionlint-py
+      - name: shellcheck
+        run: shellcheck -x scripts/*.sh
+      - name: actionlint
+        run: actionlint
+      - name: pytest
+        run: python -m pytest -q tests

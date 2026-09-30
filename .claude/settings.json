@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(make sync)",
+      "Bash(make build)",
+      "Bash(make render)",
+      "Bash(make diff)",
+      "Bash(make diff *)",
+      "Bash(make lint)",
+      "Bash(make doctor)",
+      "Bash(make test)",
+      "Bash(make check)",
+      "Bash(scripts/layout.sh *)",
+      "Bash(python3 scripts/oryx_layout.py *)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Edit(/custom/**)"
+    ],
+    "ask": [
+      "Edit(/layout/**)",
+      "Edit(/oryx.conf)",
+      "Bash(git push *)"
+    ],
+    "deny": [
+      "Bash(qmk flash *)",
+      "Bash(make *flash*)",
+      "Bash(dfu-util *)",
+      "Bash(wally-cli *)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Edit(/docs/**)",
+      "Edit(/.cache/**)"
+    ]
+  }
+}

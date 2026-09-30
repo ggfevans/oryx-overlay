@@ -3,6 +3,7 @@
 ## Unreleased
 
 - `oryx_overlay/screensaver` community module: after `SCREENSAVER_TIMEOUT` idle it runs `SCREENSAVER_MODE` with layer colours off, and restores both on the next input without writing EEPROM. Off by default; enable it in `custom/keymap.json`. Tested by `tests/test_screensaver.py`. (#3)
+- `build.sh` and `doctor.sh` now stop early when the cache path contains whitespace, which breaks QMK's module include paths, and suggest setting `CACHE_DIR` or using `make docker-build`. Tested by `tests/test_path_with_space.py`. (#22)
 
 ## 0.1.0 (2026-09-30)
 

@@ -30,6 +30,11 @@ ok()   { printf '%s✓%s %s\n' "$C_G" "$C_0" "$*" >&2; }
 warn() { printf '%swarning:%s %s\n' "$C_Y" "$C_0" "$*" >&2; }
 die()  { printf '%serror:%s %s\n' "$C_R" "$C_0" "$*" >&2; exit 1; }
 
+# QMK's module include paths break on whitespace, so the cache path (where the
+# QMK tree lives) must not contain any.
+SPACE_HINT="Set CACHE_DIR to a path without spaces (e.g. CACHE_DIR=\$HOME/.cache/oryx-overlay), or use 'make docker-build'."
+cache_path_has_space() { [[ "$CACHE_DIR" =~ [[:space:]] ]]; }
+
 CONFIG_KEYS="ORYX_LAYOUT_ID KEYBOARD KEYMAP_NAME LEGEND_STYLE ORYX_GEOMETRY QMK_BRANCH"
 
 # Load oryx.conf. Variables already set in the environment win over the file,

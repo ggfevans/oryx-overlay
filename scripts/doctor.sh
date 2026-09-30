@@ -42,4 +42,12 @@ elif load_config; then
     printf '%sLayout%s  not fetched yet (make sync)\n' "$C_B" "$C_0"
   fi
 fi
+
+problem="$(cache_path_problem)"
+if [[ -n "$problem" ]]; then
+  printf '%sCache%s   %s✗%s %s\n' "$C_B" "$C_0" "$C_R" "$C_0" "$problem"
+  status=1
+else
+  printf '%sCache%s   %s\n' "$C_B" "$C_0" "$CACHE_DIR"
+fi
 exit $status

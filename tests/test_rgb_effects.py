@@ -46,7 +46,8 @@ def _find(pattern: str) -> str | None:
     return hits[-1] if hits else None
 
 
-QMK = os.environ.get("ORYX_QMK_DIR") or _find(".cache/qmk_firmware-firmware*")
+QMK = os.environ.get("ORYX_QMK_DIR") or _find(
+    os.path.join(os.environ.get("CACHE_DIR") or ".cache", "qmk_firmware-firmware*"))
 INFO = os.environ.get("ORYX_INFO_JSON") or _find("build/info-*.json")
 pytestmark = pytest.mark.skipif(
     not (QMK and INFO and shutil.which("gcc") and shutil.which("node")),

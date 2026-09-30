@@ -6,7 +6,15 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CACHE_DIR="${CACHE_DIR:-$ROOT/.cache}"
+# QMK's makefiles can't build from a path with whitespace in it. When the repo
+# lives in one (~/My Projects/...), keep the QMK tree in the user cache instead,
+# one folder per repo. An explicit CACHE_DIR always wins.
+if [[ -z "${CACHE_DIR:-}" ]]; then
+  case "$ROOT" in
+    *[[:space:]]*) CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/oryx-overlay/$(printf '%s' "$ROOT" | cksum | awk '{print $1}')" ;;
+    *) CACHE_DIR="$ROOT/.cache" ;;
+  esac
+fi
 BUILD_DIR="${BUILD_DIR:-$ROOT/build}"
 LAYOUT_DIR="$ROOT/layout"
 CUSTOM_DIR="$ROOT/custom"
@@ -71,6 +79,35 @@ fw_major() {
 
 qmk_branch() { printf '%s' "${QMK_BRANCH:-firmware$(fw_major)}"; }
 qmk_dir()    { printf '%s' "$CACHE_DIR/qmk_firmware-$(qmk_branch)"; }
+# Per-build QMK userspace holding custom/modules (firmware v25+), outside the QMK tree.
+userspace_dir() { printf '%s' "$CACHE_DIR/userspace-$(qmk_branch)"; }
+
+# Empty when the cache path is usable, else a one-line explanation.
+cache_path_problem() {
+  case "$CACHE_DIR" in
+    *[[:space:]]*) printf 'CACHE_DIR (%s) contains whitespace, which QMK cannot build from. Set CACHE_DIR to a path without spaces, e.g. CACHE_DIR=~/.cache/oryx-overlay make build, or use make docker-build.' "$CACHE_DIR" ;;
+  esac
+}
+
+# Put the cached QMK tree's keyboards/ and modules/ back to exactly ZSA's branch:
+# undo edits to tracked files and delete everything else there (staged keymaps
+# from earlier builds at any keyboard level, modules copied in by older versions
+# of this script). Compiled objects in .build/ are kept for incremental builds.
+reset_qmk_tree() {
+  local dir="$1" top p paths
+  paths=()
+  top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || top=""
+  # Never let git fall through to an enclosing repository (such as this one).
+  if [[ -z "$top" ]] || [[ "$(cd "$top" && pwd -P)" != "$(cd "$dir" && pwd -P)" ]]; then
+    die "$dir is not a git checkout of ZSA's QMK fork. Run 'make update-qmk' to download it again."
+  fi
+  for p in keyboards modules; do
+    [[ -d "$dir/$p" ]] && paths+=("$p")
+  done
+  (( ${#paths[@]} )) || return 0
+  git -C "$dir" checkout --quiet -- "${paths[@]}" || die "could not reset $dir"
+  git -C "$dir" clean -ffdxq -- "${paths[@]}" || die "could not clean $dir"
+}
 
 # Keyboard path inside the QMK tree. Before firmware v25 the Moonlander had no
 # revision folders (revision B didn't exist yet), so moonlander/reva -> moonlander.

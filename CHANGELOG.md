@@ -3,6 +3,8 @@
 ## Unreleased
 
 - `oryx_overlay/screensaver` community module: after `SCREENSAVER_TIMEOUT` idle it runs `SCREENSAVER_MODE` with layer colours off, and restores both on the next input without writing EEPROM. Off by default; enable it in `custom/keymap.json`. Tested by `tests/test_screensaver.py`. (#3)
+- Builds start from a clean QMK tree: `build.sh` resets the cached tree's `keyboards/` and `modules/` to ZSA's branch before staging, and stages `custom/modules/` in a per-build `QMK_USERSPACE` instead of copying them into the tree. A keymap left at another keyboard level no longer hijacks later builds with a stale `SERIAL_NUMBER` (#5), a deleted module fails the build with a clear message instead of building from a stale copy, and custom modules can't replace ZSA's (`zsa/`, `qmk/`) (#7). `KEYBOARD` must name a board, not a family (`moonlander/reva`, not `moonlander`). `build.sh --stage-only` stages without compiling; `tests/test_build_staging.py` covers it. (#27)
+- A repo path with spaces builds: the QMK cache moves to `~/.cache/oryx-overlay/` (or `$XDG_CACHE_HOME`), and `build.sh` and `make doctor` explain a `CACHE_DIR` with spaces. (#22)
 
 ## 0.1.0 (2026-09-30)
 

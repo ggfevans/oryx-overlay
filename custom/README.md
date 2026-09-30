@@ -10,7 +10,7 @@ copy of `layout/` inside the QMK tree at build time:
 | `rules.mk` | `-include`d at the end of Oryx's `rules.mk` | Turning features on, `SRC +=` extra files |
 | `keymap_extra.c` | `#include`d at the end of Oryx's `keymap.c` | Combos, key overrides, helper functions |
 | `keymap.json` | its `modules` list is merged into Oryx's | Enabling community modules |
-| `modules/<owner>/<name>/` | copied into the QMK tree's `modules/` | Your own or vendored community modules |
+| `modules/<owner>/<name>/` | staged in a per-build QMK userspace, outside the QMK tree | Your own or vendored community modules. Owners ZSA ships (`zsa/`, `qmk/`) are refused. |
 
 Which one to reach for, in order of preference:
 

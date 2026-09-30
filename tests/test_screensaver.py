@@ -112,6 +112,13 @@ def test_rgb_timeout_shorter_than_screensaver_fails_to_build(tmp_path):
     assert "RGB_MATRIX_TIMEOUT" in built.stderr
 
 
+@pytest.mark.parametrize("timeout", ["0", "4294967296"])
+def test_out_of_range_timeout_fails_to_build(tmp_path, timeout):
+    built = _compile(tmp_path, f"-USCREENSAVER_TIMEOUT", f"-DSCREENSAVER_TIMEOUT={timeout}")
+    assert built.returncode != 0
+    assert "between 1 and 4294967295" in built.stderr
+
+
 def test_unsupported_board_fails_to_build(tmp_path):
     (tmp_path / "stubs.h").write_text(STUBS)
     built = subprocess.run(

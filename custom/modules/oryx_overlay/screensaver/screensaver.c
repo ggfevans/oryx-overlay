@@ -40,8 +40,9 @@ ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 0, 0);
 #    define SCREENSAVER_MODE RGB_MATRIX_CYCLE_LEFT_RIGHT
 #endif
 
-#if SCREENSAVER_TIMEOUT <= 0
-#    error "SCREENSAVER_TIMEOUT must be a positive number of milliseconds."
+// Compared against the uint32_t idle clock, so it must fit in 32 bits.
+#if SCREENSAVER_TIMEOUT <= 0 || SCREENSAVER_TIMEOUT > 4294967295
+#    error "SCREENSAVER_TIMEOUT must be between 1 and 4294967295 milliseconds."
 #endif
 
 // RGB_MATRIX_TIMEOUT switches the LEDs off after the same idle clock; if it

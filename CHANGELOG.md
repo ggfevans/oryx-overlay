@@ -3,6 +3,7 @@
 ## Unreleased
 
 - `oryx_overlay/screensaver` community module: after `SCREENSAVER_TIMEOUT` idle it runs `SCREENSAVER_MODE` with layer colours off, and restores both on the next input without writing EEPROM. Off by default; enable it in `custom/keymap.json`. Tested by `tests/test_screensaver.py`. (#3)
+- Screensaver no longer overrides Keymapp or Oryx when they take the LEDs, or any other mode change: it ends and restores only the layer-colour setting, leaving the new mode alone. (#6)
 
 ## 0.1.0 (2026-09-30)
 

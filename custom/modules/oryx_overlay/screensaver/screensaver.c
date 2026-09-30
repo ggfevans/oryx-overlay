@@ -4,6 +4,8 @@
 // never show on a fully coloured layout. After SCREENSAVER_TIMEOUT ms without
 // input this module switches to SCREENSAVER_MODE and turns layer colours off,
 // both in RAM only. The next key event, or any other input, puts both back.
+// If Keymapp or Oryx takes the LEDs meanwhile, or something else changes the
+// mode, the screensaver ends and only the layer-colour setting is restored.
 // Nothing is written to EEPROM, so a power cut mid-screensaver changes nothing.
 //
 // Enable: add "oryx_overlay/screensaver" to "modules" in custom/keymap.json.
@@ -75,15 +77,22 @@ static void screensaver_start(void) {
 static void screensaver_stop(void) {
     active                            = false;
     keyboard_config.disable_layer_led = saved_layer_led_off;
-    rgb_matrix_mode_noeeprom(saved_mode);
+    // If Keymapp or Oryx took the LEDs (set_webhid_effect switches the mode
+    // and sets rgb_control), or anything else changed the mode, that mode is
+    // theirs: leave it alone and only give the layer colours back.
+    if (!leds_controlled_elsewhere() && rgb_matrix_get_mode() == SCREENSAVER_MODE) {
+        rgb_matrix_mode_noeeprom(saved_mode);
+    }
 }
 
 void housekeeping_task_screensaver(void) {
     const bool idle = last_input_activity_elapsed() > (uint32_t)SCREENSAVER_TIMEOUT;
     if (active) {
         // Catches input that never reaches process_record (encoders, pointing
-        // devices), and the case where something else took over the LEDs.
-        if (!idle || leds_controlled_elsewhere()) {
+        // devices), and the case where something else took over the LEDs or
+        // changed the mode (e.g. Keymapp releasing them reloads the mode from
+        // EEPROM).
+        if (!idle || leds_controlled_elsewhere() || rgb_matrix_get_mode() != SCREENSAVER_MODE) {
             screensaver_stop();
         }
     } else if (idle && rgb_matrix_is_enabled() && !leds_controlled_elsewhere()) {

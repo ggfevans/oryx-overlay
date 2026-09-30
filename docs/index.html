@@ -547,6 +547,9 @@
 
     function tick(dt) {
       E.timer = E.timer + dt;
+      // Mirrors rgb_matrix.c exactly, quirk included: an expired hit lowers the count
+      // without compacting the arrays, so the newest entry drops out. Keeping QMK's
+      // behaviour is the point of this port.
       const h = E.hits, count = h.count;
       for (let i = 0; i < count; i++) {
         if (65535 - dt < h.tick[i]) { h.count--; continue; }
@@ -791,8 +794,14 @@
       const rect = stage.getBoundingClientRect();
       const px = ((evt.clientX - rect.left) / rect.width) * W, py = ((evt.clientY - rect.top) / rect.height) * H;
       return keyBoxes.find((k) => {
+        let qx = px, qy = py;
+        if (k.r) { // undo the key's rotation around (rx, ry), as draw() applies it
+          const rx = (k.rx - bounds.x0) * U + PAD, ry = (k.ry - bounds.y0) * U + PAD, a = (-k.r * Math.PI) / 180;
+          qx = rx + (px - rx) * Math.cos(a) - (py - ry) * Math.sin(a);
+          qy = ry + (px - rx) * Math.sin(a) + (py - ry) * Math.cos(a);
+        }
         const x = (k.x - bounds.x0) * U + PAD, y = (k.y - bounds.y0) * U + PAD;
-        return px >= x && px <= x + k.w * U && py >= y && py <= y + k.h * U;
+        return qx >= x && qx <= x + k.w * U && qy >= y && qy <= y + k.h * U;
       });
     }
     stage.addEventListener("pointerdown", (e) => { const k = keyAt(e); if (k) { lastUserKey = performance.now(); press(k, lastUserKey); } });

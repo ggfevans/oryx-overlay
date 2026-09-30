@@ -30,7 +30,11 @@ printf '%sOther%s\n' "$C_B" "$C_0"
 check docker "container builds" optional
 check claude "Claude Code" optional
 
-if load_config 2>/dev/null; then
+if ! ( load_config ) >/dev/null 2>&1; then
+  printf '\n%sConfig%s  oryx.conf is missing or incomplete:\n' "$C_B" "$C_0"
+  ( load_config ) 2>&1 | sed 's/^/  /' || true
+  status=1
+elif load_config; then
   printf '\n%sConfig%s  layout=%s  keyboard=zsa/%s  keymap=%s\n' "$C_B" "$C_0" "$ORYX_LAYOUT_ID" "$KEYBOARD" "$KEYMAP_NAME"
   if [[ -f "$META_FILE" ]]; then
     printf '%sLayout%s  "%s", revision %s, firmware v%s\n' "$C_B" "$C_0" "$(meta title)" "$(meta revision)" "$(meta qmk_version)"

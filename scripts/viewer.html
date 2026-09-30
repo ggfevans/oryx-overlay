@@ -351,8 +351,14 @@
       const rect = stage.getBoundingClientRect();
       const px = ((evt.clientX - rect.left) / rect.width) * W, py = ((evt.clientY - rect.top) / rect.height) * H;
       return keyBoxes.find((k) => {
+        let qx = px, qy = py;
+        if (k.r) { // undo the key's rotation around (rx, ry), as draw() applies it
+          const rx = (k.rx - bounds.x0) * U + PAD, ry = (k.ry - bounds.y0) * U + PAD, a = (-k.r * Math.PI) / 180;
+          qx = rx + (px - rx) * Math.cos(a) - (py - ry) * Math.sin(a);
+          qy = ry + (px - rx) * Math.sin(a) + (py - ry) * Math.cos(a);
+        }
         const x = (k.x - bounds.x0) * U + PAD, y = (k.y - bounds.y0) * U + PAD;
-        return px >= x && px <= x + k.w * U && py >= y && py <= y + k.h * U;
+        return qx >= x && qx <= x + k.w * U && qy >= y && qy <= y + k.h * U;
       });
     }
     stage.addEventListener("pointerdown", (e) => { const k = keyAt(e); if (k) { lastUserKey = performance.now(); press(k, lastUserKey); } });

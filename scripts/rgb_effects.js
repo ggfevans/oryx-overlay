@@ -376,6 +376,9 @@
 
     function tick(dt) {
       E.timer = E.timer + dt;
+      // Mirrors rgb_matrix.c exactly, quirk included: an expired hit lowers the count
+      // without compacting the arrays, so the newest entry drops out. Keeping QMK's
+      // behaviour is the point of this port.
       const h = E.hits, count = h.count;
       for (let i = 0; i < count; i++) {
         if (65535 - dt < h.tick[i]) { h.count--; continue; }

@@ -63,8 +63,10 @@ meta() {
 fw_major() {
   local v
   v="$(meta qmk_version)"
-  [[ -n "$v" ]] || die "layout/.oryx.json has no qmk_version"
-  printf '%s' "${v%%.*}"
+  v="${v%%.*}"
+  # Digits only: the value feeds paths, branch names and bash arithmetic.
+  [[ "$v" =~ ^[0-9]{1,3}$ ]] || die "layout/.oryx.json has an invalid qmk_version"
+  printf '%s' "$v"
 }
 
 qmk_branch() { printf '%s' "${QMK_BRANCH:-firmware$(fw_major)}"; }

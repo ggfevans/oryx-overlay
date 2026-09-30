@@ -16,11 +16,16 @@ on:
       - "custom/**"
       - "oryx.conf"
       - "scripts/**"
+      - "tests/test_rgb_effects.py"
+      - "requirements.txt"
+      - ".github/workflows/build.yml"
   workflow_dispatch:
   workflow_call:
 
+# Least privilege: the build job (which runs repository scripts) only reads.
+# Only the publish-docs job, which never runs on pull requests, can push.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: build-${{ github.ref }}
@@ -55,7 +60,9 @@ jobs:
       - name: Resolve firmware branch
         id: fw
         run: |
-          major=$(python3 -c 'import json; print(json.load(open("layout/.oryx.json"))["qmk_version"].split(".")[0])')
+          # .oryx.json is repository content a PR can change: accept digits only.
+          major=$(python3 -c 'import json, re; v = str(json.load(open("layout/.oryx.json"))["qmk_version"]).split(".")[0]; print(v if re.fullmatch(r"[0-9]{1,3}", v) else "")')
+          if [ -z "$major" ]; then echo "::error::layout/.oryx.json has an invalid qmk_version"; exit 1; fi
           branch="firmware${major}"
           sha=$(git ls-remote https://github.com/zsa/qmk_firmware.git "refs/heads/${branch}" | cut -f1)
           echo "branch=${branch}" >> "$GITHUB_OUTPUT"
@@ -81,7 +88,7 @@ jobs:
       - name: Name the artifact
         id: name
         run: |
-          rev=$(python3 -c 'import json; print(json.load(open("layout/.oryx.json"))["revision"])')
+          rev=$(python3 -c 'import json, re; print(re.sub(r"[^A-Za-z0-9]", "", str(json.load(open("layout/.oryx.json"))["revision"]))[:32])')
           fw=$(find build -maxdepth 1 \( -name '*.bin' -o -name '*.hex' \) | head -n1)
           echo "file=${fw}" >> "$GITHUB_OUTPUT"
           echo "name=$(basename "${fw%.*}")-${rev}" >> "$GITHUB_OUTPUT"
@@ -97,14 +104,17 @@ jobs:
 
       - name: Summary
         if: always()
+        env:
+          FW_FILE: ${{ steps.name.outputs.file }}
+          FW_NAME: ${{ steps.name.outputs.name }}
         run: |
           {
             echo "## Firmware"
-            if [ -n "${{ steps.name.outputs.file }}" ]; then
-              echo "Download **${{ steps.name.outputs.name }}** from the artifacts above and flash it with [Keymapp](https://www.zsa.io/flash)."
+            if [ -n "$FW_FILE" ]; then
+              echo "Download **${FW_NAME}** from the artifacts above and flash it with [Keymapp](https://www.zsa.io/flash)."
               echo
               echo '```'
-              cat "${{ steps.name.outputs.file }}.sha256"
+              cat "${FW_FILE}.sha256"
               echo '```'
             else
               echo "Build failed. Last lines of build/build.log:"
@@ -118,8 +128,34 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Commit refreshed drawings
+      - name: Keep refreshed drawings
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs
+          path: docs
+          retention-days: 1
+
+  publish-docs:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Replace docs with the fresh drawings
+        uses: actions/download-artifact@v7
+        with:
+          name: docs
+          path: docs
+
+      - name: Commit refreshed drawings
         run: |
           git add docs
           if git diff --cached --quiet; then

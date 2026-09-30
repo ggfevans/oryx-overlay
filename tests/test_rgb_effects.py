@@ -140,7 +140,7 @@ def _c_name(key: str) -> str:
     return key.upper()
 
 
-def _golden(tmp: Path, info: dict, effects: list[str], hit_sets: list) -> list[dict]:
+def _golden(tmp: Path, info: dict, effects: list[str], hit_sets: list) -> tuple[list[dict], list[list]]:
     leds = info["rgb_matrix"]["layout"]
     n = len(leds)
     cx, cy = info["rgb_matrix"].get("center_point", [112, 32])
@@ -210,7 +210,10 @@ def test_effects_match_qmk(tmp_path):
         check=True, capture_output=True, text=True,
     ).stdout)
     mismatches = []
+    # Equal lengths first, so a short node run can't let zip() skip comparisons.
+    assert len(js) == len(golden) == len(cases), f"node rendered {len(js)} frames, QMK rendered {len(golden)}"
     for g, c, frame in zip(golden, cases, js):
+        assert len(frame) == len(g["rgb"]), f"{g['e']}: node gave {len(frame)} values, QMK {len(g['rgb'])}"
         if g["rgb"] != frame:
             bad = next(i for i, (a, b) in enumerate(zip(g["rgb"], frame)) if a != b)
             mismatches.append(f"{g['e']} cfg={c['cfg']} timer={c['timer']} hits={len(c['hits'])}: first diff at LED {bad // 3} ({g['rgb'][bad//3*3:bad//3*3+3]} vs {frame[bad//3*3:bad//3*3+3]})")

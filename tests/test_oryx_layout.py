@@ -221,7 +221,9 @@ def test_lint(four_layers):
 def test_lint_flags_trap_and_dangling():
     base = base_keys()
     base[0] = "MO(9)"
-    km = ol.parse_keymap(make_keymap([base, filler(), filler(), filler()]))
+    trap = filler()
+    trap[48] = "KC_NO"  # covers the TG(2) below, so nothing leaves layer 2
+    km = ol.parse_keymap(make_keymap([base, filler(), trap, filler()]))
     ol.assign_layer_names(km, None)
     issues = ol.lint(km, ol.Labeller(km))
     assert ("error", "L0: `MO(9)` points at layer 9, which does not exist") in issues
@@ -385,3 +387,11 @@ def test_no_lighting_without_rgb_matrix(four_layers):
     info = make_info()
     del info["rgb_matrix"]
     assert ol.lighting_data(four_layers, ol.Labeller(four_layers), geo, info, []) is None
+
+
+def test_transparent_key_over_toggle_is_an_exit():
+    # Layer 2 is entered with TG(2) on the base layer; its transparent key at the
+    # same position falls through to that TG(2), so it is not a trap.
+    km = ol.parse_keymap(make_keymap([base_keys(), filler(), filler(), filler()]))
+    ol.assign_layer_names(km, None)
+    assert not [m for _, m in ol.lint(km, ol.Labeller(km)) if "no TO/TG key to leave" in m]

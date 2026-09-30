@@ -550,10 +550,21 @@ def lint(km: Keymap, lab: Labeller) -> list[tuple[str, str]]:
         if not how:
             issues.append(("warn", f"{layer.name}: no key reaches this layer (fine if a macro, combo or custom code does)"))
         elif how <= {"TO", "TG", "DF"}:
+            lower = [l for l in km.layers if l.index < layer.index][::-1]
+
+            def effective(ki: int, raw: str) -> str:
+                # A transparent key acts as the nearest lower layer's key at that
+                # position, so a TG() underneath is a way out too.
+                for other in lower:
+                    if lab.legend(raw).kind != "trans":
+                        break
+                    raw = other.keys[ki] if ki < len(other.keys) else raw
+                return raw
+
             exits = any(
                 fn in ("TO", "TG", "DF") and (tgt != layer.index or fn == "TG")
-                for raw in layer.keys
-                for fn, tgt in lab.targets(raw)
+                for ki, raw in enumerate(layer.keys)
+                for fn, tgt in lab.targets(effective(ki, raw))
             )
             if not exits:
                 issues.append(("warn", f"{layer.name}: entered with {'/'.join(sorted(how))} but has no TO/TG key to leave"))

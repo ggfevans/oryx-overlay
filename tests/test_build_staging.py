@@ -242,3 +242,13 @@ def test_concurrent_build_is_refused_and_dead_lock_is_reported(tmp_path):
     lock.unlink()
     staged(run(repo, tmp_path / "cache"))
     assert not os.path.lexists(lock)  # released on exit
+
+
+def test_directory_at_lock_path_is_refused_not_used(tmp_path):
+    repo = make_repo(tmp_path / "repo")
+    make_tree(tmp_path / "cache/qmk_firmware-firmware25")
+    lock = tmp_path / "cache/.build-lock-firmware25"
+    lock.mkdir()
+    result = run(repo, tmp_path / "cache")
+    assert result.returncode != 0 and "unexpected directory" in result.stderr
+    assert lock.is_dir() and not any(lock.iterdir())  # left alone, nothing linked inside

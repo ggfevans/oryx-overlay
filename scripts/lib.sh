@@ -107,6 +107,11 @@ same_repo_url() { local u="${1%/}"; printf '%s' "${u%.git}"; }
 acquire_build_lock() {
   local lock="$1" token owner pid host
   token="$$@$(uname -n)"
+  # A directory here (e.g. an older lock format) would make ln -s put the link
+  # inside it and "succeed". Refuse it rather than guess whether it is in use.
+  if [[ -d "$lock" ]] && [[ ! -L "$lock" ]]; then
+    die "unexpected directory at $lock (an older build lock?). If no build is running, remove it and build again: rm -rf '$lock'"
+  fi
   if ! ln -s "$token" "$lock" 2>/dev/null; then
     owner="$(readlink "$lock" 2>/dev/null)" || owner=""
     pid="${owner%%@*}" host="${owner#*@}"
@@ -114,6 +119,12 @@ acquire_build_lock() {
       die "a build lock was left by process $pid, which is no longer running (it was interrupted). Remove it and build again: rm -f '$lock'"
     fi
     die "another build (process ${pid:-?} on ${host:-?}) is using this QMK tree. Wait for it to finish, or if it is not running: rm -f '$lock'"
+  fi
+  # Confirm the link is the lock itself, not a link created inside a directory
+  # that appeared after the check above (ln has no portable "no target dir").
+  if [[ ! -L "$lock" ]] || [[ "$(readlink "$lock")" != "$token" ]]; then
+    rm -f "$lock/$token" 2>/dev/null || true
+    die "could not take the build lock at $lock. If no build is running, remove it and build again: rm -rf '$lock'"
   fi
   BUILD_LOCK="$lock" BUILD_LOCK_TOKEN="$token"
   trap '[[ "$(readlink "$BUILD_LOCK" 2>/dev/null)" == "$BUILD_LOCK_TOKEN" ]] && rm -f "$BUILD_LOCK"' EXIT

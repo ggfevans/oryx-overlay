@@ -13,11 +13,14 @@ The user edits keys in Oryx. You help with everything around that: syncing, QMK 
 |---|---|---|
 | `layout/` | Oryx | Overwritten by every sync. Edit only as a last resort (see below). `.oryx.json` holds the revision, firmware version and layer names. |
 | `custom/` | User + you | `config.h`, `rules.mk`, `keymap_extra.c`, `keymap.json`, `modules/`. See `custom/README.md`. |
+| `modules/` | Template | Bundled community modules (`oryx_overlay/screensaver`, `example/hello_overlay`), enabled from `custom/keymap.json`. To change one, copy it to `custom/modules/<owner>/<name>/`, which replaces the template's at build time. |
 | `oryx.conf` | User | Layout ID, keyboard (e.g. `moonlander/reva`), legend style. |
 | `docs/keymap.md` | Generated | **Read this first** to understand the layout: every layer as a text grid, layer access, lint checks, special keys with raw keycodes. |
 | `docs/keymap.svg`, `docs/index.html` | Generated | Drawings for humans, plus the Lighting tab (RGB effect picker). Never edit. |
 | `scripts/rgb_effects.js` | Tooling | JavaScript port of QMK's RGB Matrix effects (GPL-2.0-or-later). `tests/test_rgb_effects.py` checks it against the C. |
-| `scripts/` | Tooling | `sync.sh`, `build.sh`, `render.sh`, `oryx_layout.py`, `oryx_fetch.py`. |
+| `scripts/` | Tooling | `sync.sh`, `build.sh`, `render.sh`, `self-update.sh`, `oryx_layout.py`, `oryx_fetch.py`. |
+| `.oryx-overlay-manifest`, `.oryx-overlay-version` | Template | Which paths are template tooling, and the template release this repo is at. `make self-update` merges newer releases into those paths only. Don't edit the version by hand. |
+| `CLAUDE.local.md` | User | Personal notes for Claude (git-ignored). This file is template tooling and gets updated, so put repo-specific notes there. |
 | `.cache/qmk_firmware-firmwareNN/` | Generated | ZSA's QMK fork at the layout's firmware version. Read it to check what a feature supports; never edit it (every build resets its `keyboards/` and `modules/`). Custom modules are staged in `.cache/userspace-firmwareNN/`. If the repo path has spaces, the cache is under `~/.cache/oryx-overlay/` instead; `make doctor` prints it. |
 
 For lighting questions, read the `## Lighting` section of `docs/keymap.md`: which effects are in the firmware, the RGB Mode and Toggle Layer Colors keys, and whether Oryx layer colours hide effects. To add an effect, the user can tick it in Oryx (Advanced Settings › RGB), or you add `#define ENABLE_RGB_MATRIX_<NAME>` to `custom/config.h`. For an effect only while idle, with layer colours the rest of the time, enable the `oryx_overlay/screensaver` module in `custom/keymap.json` and set `SCREENSAVER_TIMEOUT` / `SCREENSAVER_MODE` in `custom/config.h`.
@@ -33,6 +36,7 @@ make render    # redraw docs/ only
 make diff REF=HEAD~1   # key-level changes to the layout since REF
 make lint      # unreachable layers, dangling layer keys, layers you can't leave
 make test      # tooling unit tests
+make self-update [TO=v0.2.0]   # merge a newer template release into the tooling (left uncommitted)
 ```
 
 If `make build` says `qmk` or `arm-none-eabi-gcc` is missing, use `make docker-build` or `make setup`.
@@ -41,7 +45,7 @@ If `make build` says `qmk` or `arm-none-eabi-gcc` is missing, use `make docker-b
 
 1. **Never flash firmware.** Build it and tell the user the path in `build/`. They flash with Keymapp. Flashing commands are denied in `.claude/settings.json`.
 2. **Key assignments belong in Oryx.** If the user wants a key moved or a layer changed, tell them what to change in Oryx (layer name, position, new key), then run `make sync`. Editing the keymaps array in `layout/keymap.c` makes the repo disagree with Oryx and guarantees conflicts later.
-3. **Prefer `custom/` over `layout/`**, in this order: a setting in `custom/config.h` or `custom/rules.mk`; code in `custom/keymap_extra.c`; a community module in `custom/modules/` enabled via `custom/keymap.json` (firmware v25+). Only when none fits, make a minimal edit to `layout/keymap.c` and mark every added line `// [custom]`.
+3. **Prefer `custom/` over `layout/`**, in this order: a setting in `custom/config.h` or `custom/rules.mk`; code in `custom/keymap_extra.c`; a community module (the template's `modules/` or your own in `custom/modules/`) enabled via `custom/keymap.json` (firmware v25+). Only when none fits, make a minimal edit to `layout/keymap.c` and mark every added line `// [custom]`.
 4. **Check the pinned firmware, not memory.** ZSA's fork lags mainline QMK. Before using a feature, grep `.cache/qmk_firmware-*/quantum/` and `builddefs/common_features.mk` to confirm it exists at this version. docs.qmk.fm describes mainline and may be ahead.
 5. **Redefining an Oryx `#define`** in `custom/config.h` needs `#undef` first, or the build fails on redefinition.
 6. **Prove it compiles.** After any change to `custom/` or `layout/`, run `make build` and report the result. Read `build/build.log` on failure.

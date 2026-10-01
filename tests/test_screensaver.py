@@ -1,4 +1,4 @@
-"""Behaviour test for custom/modules/oryx_overlay/screensaver.
+"""Behaviour test for modules/oryx_overlay/screensaver.
 
 Compiles screensaver.c with gcc against small stand-ins for the QMK calls it
 makes, then drives the idle clock and key events from a C harness. Needs gcc
@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = ROOT / "custom/modules/oryx_overlay/screensaver/screensaver.c"
+MODULE = ROOT / "modules/oryx_overlay/screensaver/screensaver.c"
 
 pytestmark = pytest.mark.skipif(
     not (shutil.which("gcc") and MODULE.exists()), reason="needs gcc and the screensaver module"

@@ -25,6 +25,7 @@ esac
 BUILD_DIR="${BUILD_DIR:-$ROOT/build}"
 LAYOUT_DIR="$ROOT/layout"
 CUSTOM_DIR="$ROOT/custom"
+MODULES_DIR="$ROOT/modules"  # template-owned community modules
 META_FILE="$LAYOUT_DIR/.oryx.json"
 QMK_REPO="${QMK_REPO:-https://github.com/zsa/qmk_firmware.git}"
 
@@ -86,7 +87,7 @@ fw_major() {
 
 qmk_branch() { printf '%s' "${QMK_BRANCH:-firmware$(fw_major)}"; }
 qmk_dir()    { printf '%s' "$CACHE_DIR/qmk_firmware-$(qmk_branch)"; }
-# Per-build QMK userspace holding custom/modules (firmware v25+), outside the QMK tree.
+# Per-build QMK userspace holding modules/ and custom/modules/ (firmware v25+), outside the QMK tree.
 userspace_dir() { printf '%s' "$CACHE_DIR/userspace-$(qmk_branch)"; }
 
 # Empty when the cache path is usable, else a one-line explanation.

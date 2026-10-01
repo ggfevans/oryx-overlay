@@ -8,6 +8,9 @@
 #   custom/keymap_extra.c   appended to keymap.c   via #include (combos, overrides, helpers)
 #   custom/keymap.json      "modules" merged into keymap.json (firmware v25+)
 #   custom/modules/<owner>/<name>/  staged in a per-build QMK userspace (firmware v25+)
+#   modules/<owner>/<name>/         the template's bundled modules, staged the same
+#                                   way first; a custom/modules/ module of the same
+#                                   name replaces the template's
 #
 # Every build first resets the QMK tree's keyboards/ and modules/ to ZSA's branch,
 # so nothing from an earlier build (another KEYBOARD, a deleted module) leaks in.
@@ -24,7 +27,7 @@ for arg in "$@"; do
   case "$arg" in
     --no-render) RENDER=0 ;;
     --stage-only) STAGE_ONLY=1 ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
     *) die "unknown option: $arg" ;;
   esac
 done
@@ -93,21 +96,35 @@ if [[ -d "$CUSTOM_DIR" ]]; then
   if [[ -s "$CUSTOM_DIR/keymap_extra.c" ]]; then
     { overlay_note "custom/keymap_extra.c"; printf '#include "custom/keymap_extra.c"\n'; } >>"$KM/keymap.c"
   fi
-  if [[ -n "$USERSPACE" ]] && [[ -d "$CUSTOM_DIR/modules" ]]; then
-    for mod in "$CUSTOM_DIR"/modules/*/*/; do
-      [[ -f "$mod/qmk_module.json" ]] || continue
-      rel="${mod#"$CUSTOM_DIR"/modules/}"
-      rel="${rel%/}"
-      owner="${rel%%/*}"
-      # A userspace module shadows the tree's module of the same name, and zsa/oryx
-      # is what Keymapp talks to. Never let custom/ replace a module ZSA ships.
-      [[ ! -e "$QMK_DIR/modules/$owner" ]] \
-        || die "custom/modules/$owner/ uses an owner name ZSA's firmware already ships (modules/$owner/). Rename the folder, e.g. to custom/modules/my_$owner/, and update custom/keymap.json."
-      mkdir -p "$USERSPACE/modules/$owner"
-      cp -R "${mod%/}" "$USERSPACE/modules/$rel"
+fi
+
+# Community modules: the template's modules/ first, then custom/modules/, so a
+# module of yours with the same <owner>/<name> replaces the template's.
+stage_modules() {
+  local src="$1" label="$2" mod rel owner
+  [[ -d "$src" ]] || return 0
+  for mod in "$src"/*/*/; do
+    [[ -f "$mod/qmk_module.json" ]] || continue
+    rel="${mod#"$src"/}"
+    rel="${rel%/}"
+    owner="${rel%%/*}"
+    # A userspace module shadows the tree's module of the same name, and zsa/oryx
+    # is what Keymapp talks to. Never let a staged module replace one ZSA ships.
+    [[ ! -e "$QMK_DIR/modules/$owner" ]] \
+      || die "$label/$owner/ uses an owner name ZSA's firmware already ships (modules/$owner/). Rename the folder, e.g. to $label/my_$owner/, and update custom/keymap.json."
+    if [[ -e "$USERSPACE/modules/$rel" ]]; then
+      log "Module: $rel (your $label/$rel replaces the template's modules/$rel)"
+      rm -rf "$USERSPACE/modules/$rel"
+    else
       log "Module: $rel"
-    done
-  fi
+    fi
+    mkdir -p "$USERSPACE/modules/$owner"
+    cp -R "${mod%/}" "$USERSPACE/modules/$rel"
+  done
+}
+if [[ -n "$USERSPACE" ]]; then
+  stage_modules "$MODULES_DIR" modules
+  stage_modules "$CUSTOM_DIR/modules" custom/modules
 fi
 
 # Merge custom/keymap.json's modules into Oryx's keymap.json, then check that every
@@ -130,7 +147,7 @@ roots = [Path(userspace) / "modules", qmk_dir / "modules"]
 missing = [m for m in data.get("modules", []) if not any((r / m / "qmk_module.json").is_file() for r in roots)]
 if userspace and missing:
     sys.exit("error: community module not found: " + ", ".join(missing)
-             + ". Add it as custom/modules/<owner>/<name>/ or remove it from custom/keymap.json.")
+             + ". Add it as custom/modules/<owner>/<name>/ (or restore the template's modules/<owner>/<name>/), or remove it from custom/keymap.json.")
 PY
 
 if [[ $STAGE_ONLY == 1 ]]; then

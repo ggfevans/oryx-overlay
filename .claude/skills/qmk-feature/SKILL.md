@@ -34,7 +34,7 @@ If it's missing, say so and offer the closest alternative that does exist.
 | An RGB effect Oryx left out | `#define ENABLE_RGB_MATRIX_<NAME>` in `custom/config.h` (or the user ticks it in Oryx, Advanced Settings › RGB). The Lighting tab in `docs/index.html` previews it. |
 | Turn a feature on or off | `custom/rules.mk` (`X_ENABLE = yes`) |
 | Data tables: combos, key overrides, autocorrect | `custom/keymap_extra.c` (appended to keymap.c, so QMK introspection sees it) |
-| Logic on every keypress or scan | A community module: `custom/modules/<owner>/<name>/` with `qmk_module.json` and `<name>.c` defining `process_record_<name>()`, enabled in `custom/keymap.json`. Needs firmware v25+. `custom/modules/example/hello_overlay/` is a template. |
+| Logic on every keypress or scan | A community module: `custom/modules/<owner>/<name>/` with `qmk_module.json` and `<name>.c` defining `process_record_<name>()`, enabled in `custom/keymap.json`. Needs firmware v25+. `modules/example/hello_overlay/` (the template's) is an example to copy. |
 | A hook that must live inside an Oryx callback | Last resort: a minimal edit to `layout/keymap.c`, every added line marked `// [custom]`. Tell the user it may conflict on a later sync. |
 
 Don't define callbacks Oryx already defines (`process_record_user`,

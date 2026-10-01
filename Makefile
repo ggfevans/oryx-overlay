@@ -8,7 +8,7 @@ DOCKER ?= docker
 IMAGE ?= oryx-overlay-env
 REF ?= HEAD
 
-.PHONY: help sync build render diff lint doctor setup check test update-qmk clean docker-image
+.PHONY: help sync build render diff lint doctor setup check test update-qmk self-update clean docker-image
 
 help: ## Show this help
 	@printf 'Usage: make <target>\n\n'
@@ -48,6 +48,9 @@ setup: ## Create .venv with the qmk CLI and keymap-drawer (needs Python 3.10+)
 update-qmk: ## Re-download ZSA's QMK fork (e.g. after ZSA patches a firmware branch)
 	@source scripts/lib.sh && rm -rf "$$CACHE_DIR"/qmk_firmware-* "$$CACHE_DIR"/userspace-* \
 	  && echo "Removed cached QMK trees in $$CACHE_DIR; the next build clones fresh."
+
+self-update: ## Merge a newer template release into the tooling (TO=<tag-or-ref>, default newest)
+	@TO="$(TO)" FROM="$(FROM)" scripts/self-update.sh
 
 clean: ## Remove build output
 	rm -rf build

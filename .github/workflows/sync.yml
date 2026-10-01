@@ -2,19 +2,24 @@ name: Sync from Oryx
 
 on:
   workflow_dispatch:
-  # Uncomment to check Oryx for changes on a schedule (times are UTC):
-  # schedule:
-  #   - cron: "17 */6 * * *"
+  # Checks Oryx every 6 hours (UTC), but only once you opt in: set the repository
+  # variable ORYX_SYNC_SCHEDULE to true (Settings > Secrets and variables > Actions >
+  # Variables). Until then scheduled runs skip straight away.
+  schedule:
+    - cron: "17 */6 * * *"
 
 permissions:
   contents: write
 
+# A scheduled run that is going to skip gets a group of its own, so it can never
+# replace a sync that is queued behind a running one.
 concurrency:
-  group: sync
+  group: ${{ (github.event_name == 'schedule' && vars.ORYX_SYNC_SCHEDULE != 'true') && format('sync-skip-{0}', github.run_id) || 'sync' }}
   cancel-in-progress: false
 
 jobs:
   sync:
+    if: github.event_name != 'schedule' || vars.ORYX_SYNC_SCHEDULE == 'true'
     runs-on: ubuntu-24.04
     steps:
       - name: Check out

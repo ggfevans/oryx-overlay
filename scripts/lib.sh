@@ -25,6 +25,7 @@ esac
 BUILD_DIR="${BUILD_DIR:-$ROOT/build}"
 LAYOUT_DIR="$ROOT/layout"
 CUSTOM_DIR="$ROOT/custom"
+MODULES_DIR="$ROOT/modules"  # template-owned community modules
 META_FILE="$LAYOUT_DIR/.oryx.json"
 QMK_REPO="${QMK_REPO:-https://github.com/zsa/qmk_firmware.git}"
 
@@ -86,7 +87,7 @@ fw_major() {
 
 qmk_branch() { printf '%s' "${QMK_BRANCH:-firmware$(fw_major)}"; }
 qmk_dir()    { printf '%s' "$CACHE_DIR/qmk_firmware-$(qmk_branch)"; }
-# Per-build QMK userspace holding custom/modules (firmware v25+), outside the QMK tree.
+# Per-build QMK userspace holding modules/ and custom/modules/ (firmware v25+), outside the QMK tree.
 userspace_dir() { printf '%s' "$CACHE_DIR/userspace-$(qmk_branch)"; }
 
 # Empty when the cache path is usable, else a one-line explanation.
@@ -99,35 +100,47 @@ cache_path_problem() {
 # A repository URL without a trailing slash or .git, for comparing remotes.
 same_repo_url() { local u="${1%/}"; printf '%s' "${u%.git}"; }
 
-# One build at a time per QMK tree: a second build would reset or restage the
-# tree under the first. The lock is a symlink whose target names its owner
-# ("pid@host"): creating it is atomic and carries the owner in the same step, on
-# macOS and Linux alike. A lock is never taken over automatically, since two
-# builds could both decide it was stale; a dead owner is reported instead.
-acquire_build_lock() {
-  local lock="$1" token owner pid host
+# One build (or self-update) at a time: a second one would reset, restage or
+# rewrite files under the first. The lock is a symlink whose target names its
+# owner ("pid@host"): creating it is atomic and carries the owner in the same
+# step, on macOS and Linux alike. A lock is never taken over automatically, since
+# two runs could both decide it was stale; a dead owner is reported instead.
+# Usage: acquire_lock <path> <what, e.g. "build">. Sets LOCK_PATH/LOCK_TOKEN;
+# release_lock removes the lock only if this process still owns it.
+acquire_lock() {
+  local lock="$1" what="$2" token owner pid host
   token="$$@$(uname -n)"
   # A directory here (e.g. an older lock format) would make ln -s put the link
   # inside it and "succeed". Refuse it rather than guess whether it is in use.
   if [[ -d "$lock" ]] && [[ ! -L "$lock" ]]; then
-    die "unexpected directory at $lock (an older build lock?). If no build is running, remove it and build again: rm -rf '$lock'"
+    die "unexpected directory at $lock (an older $what lock?). If no $what is running, remove it and try again: rm -rf '$lock'"
   fi
   if ! ln -s "$token" "$lock" 2>/dev/null; then
     owner="$(readlink "$lock" 2>/dev/null)" || owner=""
     pid="${owner%%@*}" host="${owner#*@}"
     if [[ "$host" == "$(uname -n)" ]] && [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
-      die "a build lock was left by process $pid, which is no longer running (it was interrupted). Remove it and build again: rm -f '$lock'"
+      die "a $what lock was left by process $pid, which is no longer running (it was interrupted). Remove it and try again: rm -f '$lock'"
     fi
-    die "another build (process ${pid:-?} on ${host:-?}) is using this QMK tree. Wait for it to finish, or if it is not running: rm -f '$lock'"
+    die "another $what (process ${pid:-?} on ${host:-?}) is running. Wait for it to finish, or if it is not running: rm -f '$lock'"
   fi
   # Confirm the link is the lock itself, not a link created inside a directory
   # that appeared after the check above (ln has no portable "no target dir").
   if [[ ! -L "$lock" ]] || [[ "$(readlink "$lock")" != "$token" ]]; then
     rm -f "$lock/$token" 2>/dev/null || true
-    die "could not take the build lock at $lock. If no build is running, remove it and build again: rm -rf '$lock'"
+    die "could not take the $what lock at $lock. If no $what is running, remove it and try again: rm -rf '$lock'"
   fi
-  BUILD_LOCK="$lock" BUILD_LOCK_TOKEN="$token"
-  trap '[[ "$(readlink "$BUILD_LOCK" 2>/dev/null)" == "$BUILD_LOCK_TOKEN" ]] && rm -f "$BUILD_LOCK"' EXIT
+  LOCK_PATH="$lock" LOCK_TOKEN="$token"
+}
+
+release_lock() {
+  [[ -n "${LOCK_PATH:-}" ]] && [[ "$(readlink "$LOCK_PATH" 2>/dev/null)" == "${LOCK_TOKEN:-}" ]] && rm -f "$LOCK_PATH"
+  return 0
+}
+
+# One build at a time per QMK tree.
+acquire_build_lock() {
+  acquire_lock "$1" build
+  trap release_lock EXIT
 }
 
 # Put the cached QMK tree's keyboards/ and modules/ back to exactly ZSA's branch:

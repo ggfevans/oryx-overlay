@@ -32,7 +32,7 @@ flowchart LR
 
 1. `scripts/oryx_fetch.py` asks Oryx's public GraphQL API for your layout's latest revision and downloads the same source zip as Oryx's *Download source* button.
 2. The export is committed to the `oryx` branch, which only ever holds untouched Oryx output. Merging it into `main` replays just what you changed in Oryx on top of any edits in `layout/`. This is the approach [poulainpi/oryx-with-custom-qmk](https://github.com/poulainpi/oryx-with-custom-qmk) proved out.
-3. `scripts/build.sh` resets ZSA's QMK fork (at the firmware version Oryx used) to its branch, copies `layout/` into it, appends `custom/` through `#include` and `-include` lines in that staging copy, stages `custom/modules/` in a QMK userspace, and compiles.
+3. `scripts/build.sh` resets ZSA's QMK fork (at the firmware version Oryx used) to its branch, copies `layout/` into it, appends `custom/` through `#include` and `-include` lines in that staging copy, stages the template's `modules/` and your `custom/modules/` in a QMK userspace, and compiles.
 
 ## Quick start
 
@@ -57,7 +57,7 @@ Put your changes in `custom/`. Nothing there can conflict with an Oryx export.
 | `custom/rules.mk` | `-include` at the end of Oryx's `rules.mk` | `COMBO_ENABLE = yes`, `SRC += custom/...` |
 | `custom/keymap_extra.c` | `#include` at the end of Oryx's `keymap.c` | Combos, key overrides, helpers |
 | `custom/keymap.json` | `modules` merged into Oryx's list | Enabling [community modules](https://docs.qmk.fm/features/community_modules) |
-| `custom/modules/<owner>/<name>/` | a per-build QMK userspace (`QMK_USERSPACE`) | Per-keypress logic without touching `process_record_user` |
+| `custom/modules/<owner>/<name>/` | a per-build QMK userspace (`QMK_USERSPACE`) | Per-keypress logic without touching `process_record_user`. Same name as a bundled module in `modules/`? Yours wins. |
 
 Example, home-row mods that stop misfiring:
 
@@ -120,7 +120,7 @@ Want layer colours while you type and an effect when you walk away? The bundled 
 #define SCREENSAVER_MODE RGB_MATRIX_RAINBOW_PINWHEELS // default RGB_MATRIX_CYCLE_LEFT_RIGHT
 ```
 
-Pick the effect in the Lighting tab; it has to be in your firmware. Oryx's RGB timeout must be longer than the screensaver delay (the build tells you if it isn't). A non-reactive effect works best, since nobody is typing.
+The module lives in `modules/oryx_overlay/screensaver/`. Pick the effect in the Lighting tab; it has to be in your firmware. Oryx's RGB timeout must be longer than the screensaver delay (the build tells you if it isn't). A non-reactive effect works best, since nobody is typing.
 
 ## Working with Claude Code
 
@@ -140,6 +140,8 @@ Things to try:
 I just moved some keys in Oryx. Sync, build, and tell me what changed.
 Add a J+K combo for Escape.
 ```
+
+Keep your own notes for Claude in `CLAUDE.local.md` (git-ignored, and read alongside `CLAUDE.md`), and personal permissions in `.claude/settings.local.json`. `CLAUDE.md` and `.claude/` are template tooling, so `make self-update` updates them.
 
 `.claude/settings.json` lets Claude run the `make` targets and edit `custom/` freely, asks before it edits `layout/` or pushes, and denies flashing commands and edits to generated files. Claude builds; you flash.
 
@@ -175,8 +177,43 @@ Sync and build scripts need bash 3.2+ and Python 3.9+, so the macOS system versi
 | `make doctor` | List installed tools and the current layout |
 | `make docker-<target>` | Run any target in the toolchain container |
 | `make check` | Lint and test the tooling itself |
+| `make self-update [TO=<ref>]` | Merge a newer template release into the tooling (see below) |
 
 Environment variables override `oryx.conf` for one run: `KEYBOARD=moonlander/revb make build`.
+
+## Updating from the template
+
+**Use this template** copies the files without the template's history, so `git merge` can't bring in later fixes. `make self-update` does it instead:
+
+```sh
+make self-update              # newest release (TO=v0.3.0 for a given tag, TO=main for unreleased)
+git diff                      # review
+git commit -am "template: upgrade to v0.3.0"
+```
+
+It needs a clean working tree. It fetches the template, and for each template-owned path in `.oryx-overlay-manifest` (`scripts/`, `modules/`, workflows, `Makefile`, `CLAUDE.md`, this README, ...) it does a 3-way merge between the release in `.oryx-overlay-version`, your copy and the new release:
+
+- Files you never changed are replaced. Your edits are kept where they don't overlap the template's; overlapping edits get `<<<<<<<` conflict markers and the command exits non-zero.
+- New template files are added. Files the template removed are deleted only if you hadn't changed them.
+- `layout/`, `custom/`, `oryx.conf` and `docs/` are never written. To keep a template path as you have it (say you rewrote this README), list it in `.oryx-overlay-keep`.
+- The result is left uncommitted, with the new release's CHANGELOG entries printed. To back out: `git reset --hard`.
+
+If your repo predates `make self-update`, fetch the script and its helpers from the release you are upgrading to, then pass both releases:
+
+```sh
+TO=v0.2.0   # the release you are upgrading to
+git fetch https://github.com/ggfevans/oryx-overlay.git "refs/tags/$TO"
+for f in scripts/self-update.sh scripts/lib.sh; do git show "FETCH_HEAD:$f" > "$f"; done
+chmod +x scripts/self-update.sh
+git add scripts/self-update.sh scripts/lib.sh && git commit -m "template: add self-update"
+FROM=v0.1.0 TO=$TO scripts/self-update.sh
+```
+
+Taking both files from that same release means they match it exactly, so the upgrade treats them as already up to date.
+
+Older copies keep the bundled modules in `custom/modules/`. Self-update leaves your copies there, and they keep replacing the template's `modules/` until you delete them (it tells you which).
+
+To check Oryx on a schedule, set the repository variable `ORYX_SYNC_SCHEDULE` to `true` (Settings → Secrets and variables → Actions → Variables). The **Sync from Oryx** workflow then runs every 6 hours, with no workflow edit to merge on the next upgrade.
 
 ## Troubleshooting
 

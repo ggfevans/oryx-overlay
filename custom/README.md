@@ -10,7 +10,7 @@ copy of `layout/` inside the QMK tree at build time:
 | `rules.mk` | `-include`d at the end of Oryx's `rules.mk` | Turning features on, `SRC +=` extra files |
 | `keymap_extra.c` | `#include`d at the end of Oryx's `keymap.c` | Combos, key overrides, helper functions |
 | `keymap.json` | its `modules` list is merged into Oryx's | Enabling community modules |
-| `modules/<owner>/<name>/` | staged in a per-build QMK userspace, outside the QMK tree | Your own or vendored community modules. Owners ZSA ships (`zsa/`, `qmk/`) are refused. |
+| `modules/<owner>/<name>/` | staged in a per-build QMK userspace, outside the QMK tree | Your own or vendored community modules. One with the same name as a template module (in `modules/` at the repo root) replaces it. Owners ZSA ships (`zsa/`, `qmk/`) are refused. |
 
 Which one to reach for, in order of preference:
 
@@ -23,9 +23,12 @@ Which one to reach for, in order of preference:
    small and mark it `// [custom]`. Git carries it across Oryx syncs, and if
    Oryx rewrites the same lines you resolve a merge conflict.
 
-Bundled modules (off until you list them in `keymap.json`):
+The template's bundled modules live in `modules/` at the repo root, so
+`make self-update` can ship fixes to them. They're off until you list them in
+`keymap.json`. To change one, copy it into `custom/modules/` under the same
+name and edit your copy:
 
 | Module | Does |
 |---|---|
 | `example/hello_overlay` | A minimal example: Shift+Backspace sends Delete. |
-| `oryx_overlay/screensaver` | Runs an RGB effect while the keyboard is idle and hides Oryx layer colours, restoring both on the next keypress. Settings are at the top of `screensaver.c`. |
+| `oryx_overlay/screensaver` | Runs an RGB effect while the keyboard is idle and hides Oryx layer colours, restoring both on the next keypress. Settings are at the top of `screensaver.c`; set them in `config.h`. |

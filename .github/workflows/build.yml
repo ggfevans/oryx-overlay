@@ -6,6 +6,7 @@ on:
     paths:
       - "layout/**"
       - "custom/**"
+      - "modules/**"
       - "oryx.conf"
       - "scripts/**"
       - "requirements.txt"
@@ -14,6 +15,7 @@ on:
     paths:
       - "layout/**"
       - "custom/**"
+      - "modules/**"
       - "oryx.conf"
       - "scripts/**"
       - "tests/test_rgb_effects.py"

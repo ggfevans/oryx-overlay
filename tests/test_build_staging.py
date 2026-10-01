@@ -35,7 +35,7 @@ def write(path: Path, text: str = "") -> None:
 
 def make_repo(dest: Path, modules: list[str] | None = None, qmk_version: str = "25.0") -> Path:
     """Copy the parts of this repo build.sh needs, with the given custom/keymap.json modules."""
-    for name in ("scripts", "layout", "custom"):
+    for name in ("scripts", "layout", "custom", "modules"):
         shutil.copytree(ROOT / name, dest / name)
     shutil.copy(ROOT / "oryx.conf", dest / "oryx.conf")
     meta = json.loads((dest / "layout/.oryx.json").read_text())
@@ -135,10 +135,34 @@ def test_deleted_module_fails_clearly(tmp_path):
     repo = make_repo(tmp_path / "repo", modules=["oryx_overlay/screensaver"])
     make_tree(tmp_path / "cache/qmk_firmware-firmware25")
     staged(run(repo, tmp_path / "cache"))
-    shutil.rmtree(repo / "custom/modules/oryx_overlay")
+    shutil.rmtree(repo / "modules/oryx_overlay")
     result = run(repo, tmp_path / "cache")
     assert result.returncode != 0
     assert "community module not found: oryx_overlay/screensaver" in result.stderr
+
+
+def test_custom_module_replaces_template_module(tmp_path):
+    repo = make_repo(tmp_path / "repo", modules=["oryx_overlay/screensaver"])
+    make_tree(tmp_path / "cache/qmk_firmware-firmware25")
+    mine = repo / "custom/modules/oryx_overlay/screensaver"
+    shutil.copytree(repo / "modules/oryx_overlay/screensaver", mine)
+    write(mine / "screensaver.c", "/* mine */\n")
+    write(mine / "extra.h", "/* only mine */\n")
+    write(repo / "custom/modules/me/mine/qmk_module.json", "{}")
+    result = run(repo, tmp_path / "cache")
+    us = Path(staged(result)["userspace"])
+    assert (us / "modules/oryx_overlay/screensaver/screensaver.c").read_text() == "/* mine */\n"
+    assert (us / "modules/oryx_overlay/screensaver/extra.h").is_file()
+    assert (us / "modules/example/hello_overlay/qmk_module.json").is_file()  # template's, untouched
+    assert (us / "modules/me/mine/qmk_module.json").is_file()
+    assert "your custom/modules/oryx_overlay/screensaver replaces the template's modules/oryx_overlay/screensaver" in result.stderr
+
+    # Without your copy, the template's module comes back on the next build.
+    shutil.rmtree(repo / "custom/modules/oryx_overlay")
+    us = Path(staged(run(repo, tmp_path / "cache"))["userspace"])
+    assert (us / "modules/oryx_overlay/screensaver/screensaver.c").read_text() == \
+        (ROOT / "modules/oryx_overlay/screensaver/screensaver.c").read_text()
+    assert not (us / "modules/oryx_overlay/screensaver/extra.h").exists()
 
 
 def test_custom_module_cannot_replace_zsa_module(tmp_path):

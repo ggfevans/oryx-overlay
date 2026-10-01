@@ -1,0 +1,26 @@
+# Template-owned paths: `make self-update` (scripts/self-update.sh) brings these
+# up to a newer oryx-overlay release with a 3-way merge per file, so your own
+# edits to them survive unless they overlap the template's.
+#
+# Everything else is yours. layout/, custom/, oryx.conf and docs/ are never
+# written, whatever this file says. To stop updates to a path listed here, add
+# it to .oryx-overlay-keep instead of editing this file.
+.claude/settings.json
+.claude/skills/
+.github/workflows/
+docker/
+modules/
+scripts/
+tests/
+.dockerignore
+.editorconfig
+.gitignore
+.oryx-overlay-manifest
+.shellcheckrc
+CHANGELOG.md
+CLAUDE.md
+CONTRIBUTING.md
+LICENSE
+Makefile
+README.md
+requirements.txt

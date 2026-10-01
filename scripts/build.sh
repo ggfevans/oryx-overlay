@@ -46,6 +46,7 @@ if [[ $STAGE_ONLY == 0 ]]; then
 fi
 
 QMK_DIR="$(qmk_dir)"
+acquire_build_lock "$CACHE_DIR/.build-lock-$(qmk_branch)"
 KB="$(kb_path)"
 [[ -d "$QMK_DIR/keyboards/$KB" ]] || die "keyboard '$KB' not found in $(qmk_branch). Check KEYBOARD in oryx.conf."
 # A board family (moonlander, ergodox_ez) builds one of its boards under another

@@ -63,7 +63,9 @@ def make_tree(path: Path, v25: bool = True) -> Path:
     write(path / "keyboards/zsa/moonlander/keymaps/default/keymap.c", "/* default */\n")
     write(path / "keyboards/zsa/voyager/keyboard.json", "{}")
     env = {**os.environ, **GIT_ENV}
-    subprocess.run(["git", "init", "-q", str(path)], check=True, env=env)
+    branch = "firmware25" if v25 else "firmware24"
+    subprocess.run(["git", "init", "-q", "-b", branch, str(path)], check=True, env=env)
+    subprocess.run(["git", "-C", str(path), "remote", "add", "origin", "https://github.com/zsa/qmk_firmware.git"], check=True, env=env)
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, env=env)
     subprocess.run(["git", "-C", str(path), "commit", "-qm", "zsa"], check=True, env=env)
     return path
@@ -207,3 +209,33 @@ def test_firmware24_has_no_userspace(tmp_path):
     result = run(repo, tmp_path / "cache", KEYBOARD="ergodox_ez")
     assert result.returncode != 0
     assert "one of: ergodox_ez/stm32/glow ergodox_ez/stm32/shine\n" in result.stderr
+
+
+def test_tree_from_another_repository_or_branch_is_refused(tmp_path):
+    repo = make_repo(tmp_path / "repo")
+    tree = make_tree(tmp_path / "cache/qmk_firmware-firmware25")
+    env = {**os.environ, **GIT_ENV}
+    subprocess.run(["git", "-C", str(tree), "remote", "set-url", "origin", "https://example.com/other.git"], check=True, env=env)
+    result = run(repo, tmp_path / "cache")
+    assert result.returncode != 0 and "not https://github.com/zsa/qmk_firmware.git on firmware25" in result.stderr
+    subprocess.run(["git", "-C", str(tree), "remote", "set-url", "origin", "https://github.com/zsa/qmk_firmware"], check=True, env=env)
+    subprocess.run(["git", "-C", str(tree), "checkout", "-qb", "firmware24"], check=True, env=env)
+    result = run(repo, tmp_path / "cache")
+    assert result.returncode != 0 and "on firmware24" in result.stderr
+
+
+def test_concurrent_build_is_refused_and_stale_lock_is_taken_over(tmp_path):
+    repo = make_repo(tmp_path / "repo")
+    make_tree(tmp_path / "cache/qmk_firmware-firmware25")
+    lock = tmp_path / "cache/.build-lock-firmware25"
+    lock.mkdir()
+    host = subprocess.run(["uname", "-n"], capture_output=True, text=True, check=True).stdout.strip()
+    (lock / "host").write_text(host + "\n")
+    (lock / "pid").write_text(f"{os.getpid()}\n")  # a live process: this test
+    result = run(repo, tmp_path / "cache")
+    assert result.returncode != 0 and "another build" in result.stderr
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    (lock / "pid").write_text(f"{dead.pid}\n")
+    staged(run(repo, tmp_path / "cache"))
+    assert not lock.exists()  # released on exit

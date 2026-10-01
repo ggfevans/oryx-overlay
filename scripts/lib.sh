@@ -15,6 +15,13 @@ if [[ -z "${CACHE_DIR:-}" ]]; then
     *) CACHE_DIR="$ROOT/.cache" ;;
   esac
 fi
+# QMK runs from inside its own tree (make -C), so a relative or quoted-tilde
+# CACHE_DIR would resolve somewhere else there. Make it absolute once, here.
+# shellcheck disable=SC2088  # matching a literal, unexpanded tilde on purpose
+case "$CACHE_DIR" in
+  "~"|"~/"*) CACHE_DIR="$HOME${CACHE_DIR#\~}" ;;
+esac
+[[ "$CACHE_DIR" == /* ]] || CACHE_DIR="$PWD/$CACHE_DIR"
 BUILD_DIR="${BUILD_DIR:-$ROOT/build}"
 LAYOUT_DIR="$ROOT/layout"
 CUSTOM_DIR="$ROOT/custom"
@@ -89,6 +96,30 @@ cache_path_problem() {
   esac
 }
 
+# A repository URL without a trailing slash or .git, for comparing remotes.
+same_repo_url() { local u="${1%/}"; printf '%s' "${u%.git}"; }
+
+# One build at a time per QMK tree: a second build would reset or restage the
+# tree under the first. mkdir is atomic on every platform, unlike flock.
+acquire_build_lock() {
+  local lock="$1" pid host
+  if ! mkdir "$lock" 2>/dev/null; then
+    pid="$(cat "$lock/pid" 2>/dev/null)" || pid=""
+    host="$(cat "$lock/host" 2>/dev/null)" || host=""
+    if [[ "$host" == "$(uname -n)" ]] && [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
+      warn "removing a stale build lock left by process $pid"
+      rm -rf "$lock"
+      mkdir "$lock" 2>/dev/null || die "another build took the lock at $lock"
+    else
+      die "another build (process ${pid:-?} on ${host:-?}) is using this QMK tree. Wait for it, or delete $lock if it is not running."
+    fi
+  fi
+  printf '%s\n' "$$" >"$lock/pid"
+  uname -n >"$lock/host"
+  BUILD_LOCK="$lock"
+  trap 'rm -rf "$BUILD_LOCK"' EXIT
+}
+
 # Put the cached QMK tree's keyboards/ and modules/ back to exactly ZSA's branch:
 # undo edits to tracked files and delete everything else there (staged keymaps
 # from earlier builds at any keyboard level, modules copied in by older versions
@@ -100,6 +131,13 @@ reset_qmk_tree() {
   # Never let git fall through to an enclosing repository (such as this one).
   if [[ -z "$top" ]] || [[ "$(cd "$top" && pwd -P)" != "$(cd "$dir" && pwd -P)" ]]; then
     die "$dir is not a git checkout of ZSA's QMK fork. Run 'make update-qmk' to download it again."
+  fi
+  # Only ever build (and reset) the fork and branch this layout needs.
+  local url branch
+  url="$(git -C "$dir" remote get-url origin 2>/dev/null)" || url=""
+  branch="$(git -C "$dir" symbolic-ref --short -q HEAD 2>/dev/null)" || branch=""
+  if [[ "$(same_repo_url "$url")" != "$(same_repo_url "$QMK_REPO")" ]] || [[ "$branch" != "$(qmk_branch)" ]]; then
+    die "$dir is ${url:-an unknown repository} on ${branch:-a detached HEAD}, not $QMK_REPO on $(qmk_branch). Run 'make update-qmk' to download it again."
   fi
   for p in keyboards modules; do
     [[ -d "$dir/$p" ]] && paths+=("$p")

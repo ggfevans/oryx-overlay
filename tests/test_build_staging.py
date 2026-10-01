@@ -224,18 +224,21 @@ def test_tree_from_another_repository_or_branch_is_refused(tmp_path):
     assert result.returncode != 0 and "on firmware24" in result.stderr
 
 
-def test_concurrent_build_is_refused_and_stale_lock_is_taken_over(tmp_path):
+def test_concurrent_build_is_refused_and_dead_lock_is_reported(tmp_path):
     repo = make_repo(tmp_path / "repo")
     make_tree(tmp_path / "cache/qmk_firmware-firmware25")
     lock = tmp_path / "cache/.build-lock-firmware25"
-    lock.mkdir()
     host = subprocess.run(["uname", "-n"], capture_output=True, text=True, check=True).stdout.strip()
-    (lock / "host").write_text(host + "\n")
-    (lock / "pid").write_text(f"{os.getpid()}\n")  # a live process: this test
+    os.symlink(f"{os.getpid()}@{host}", lock)  # a live owner: this test
     result = run(repo, tmp_path / "cache")
     assert result.returncode != 0 and "another build" in result.stderr
     dead = subprocess.Popen(["true"])
     dead.wait()
-    (lock / "pid").write_text(f"{dead.pid}\n")
+    lock.unlink()
+    os.symlink(f"{dead.pid}@{host}", lock)
+    result = run(repo, tmp_path / "cache")
+    assert result.returncode != 0 and "no longer running" in result.stderr and "rm -f" in result.stderr
+    assert os.path.islink(lock)  # never taken over automatically
+    lock.unlink()
     staged(run(repo, tmp_path / "cache"))
-    assert not lock.exists()  # released on exit
+    assert not os.path.lexists(lock)  # released on exit

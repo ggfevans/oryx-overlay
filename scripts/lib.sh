@@ -100,24 +100,23 @@ cache_path_problem() {
 same_repo_url() { local u="${1%/}"; printf '%s' "${u%.git}"; }
 
 # One build at a time per QMK tree: a second build would reset or restage the
-# tree under the first. mkdir is atomic on every platform, unlike flock.
+# tree under the first. The lock is a symlink whose target names its owner
+# ("pid@host"): creating it is atomic and carries the owner in the same step, on
+# macOS and Linux alike. A lock is never taken over automatically, since two
+# builds could both decide it was stale; a dead owner is reported instead.
 acquire_build_lock() {
-  local lock="$1" pid host
-  if ! mkdir "$lock" 2>/dev/null; then
-    pid="$(cat "$lock/pid" 2>/dev/null)" || pid=""
-    host="$(cat "$lock/host" 2>/dev/null)" || host=""
+  local lock="$1" token owner pid host
+  token="$$@$(uname -n)"
+  if ! ln -s "$token" "$lock" 2>/dev/null; then
+    owner="$(readlink "$lock" 2>/dev/null)" || owner=""
+    pid="${owner%%@*}" host="${owner#*@}"
     if [[ "$host" == "$(uname -n)" ]] && [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
-      warn "removing a stale build lock left by process $pid"
-      rm -rf "$lock"
-      mkdir "$lock" 2>/dev/null || die "another build took the lock at $lock"
-    else
-      die "another build (process ${pid:-?} on ${host:-?}) is using this QMK tree. Wait for it, or delete $lock if it is not running."
+      die "a build lock was left by process $pid, which is no longer running (it was interrupted). Remove it and build again: rm -f '$lock'"
     fi
+    die "another build (process ${pid:-?} on ${host:-?}) is using this QMK tree. Wait for it to finish, or if it is not running: rm -f '$lock'"
   fi
-  printf '%s\n' "$$" >"$lock/pid"
-  uname -n >"$lock/host"
-  BUILD_LOCK="$lock"
-  trap 'rm -rf "$BUILD_LOCK"' EXIT
+  BUILD_LOCK="$lock" BUILD_LOCK_TOKEN="$token"
+  trap '[[ "$(readlink "$BUILD_LOCK" 2>/dev/null)" == "$BUILD_LOCK_TOKEN" ]] && rm -f "$BUILD_LOCK"' EXIT
 }
 
 # Put the cached QMK tree's keyboards/ and modules/ back to exactly ZSA's branch:

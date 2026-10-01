@@ -6,7 +6,22 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CACHE_DIR="${CACHE_DIR:-$ROOT/.cache}"
+# QMK's makefiles can't build from a path with whitespace in it. When the repo
+# lives in one (~/My Projects/...), keep the QMK tree in the user cache instead,
+# one folder per repo. An explicit CACHE_DIR always wins.
+if [[ -z "${CACHE_DIR:-}" ]]; then
+  case "$ROOT" in
+    *[[:space:]]*) CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/oryx-overlay/$(printf '%s' "$ROOT" | cksum | awk '{print $1}')" ;;
+    *) CACHE_DIR="$ROOT/.cache" ;;
+  esac
+fi
+# QMK runs from inside its own tree (make -C), so a relative or quoted-tilde
+# CACHE_DIR would resolve somewhere else there. Make it absolute once, here.
+# shellcheck disable=SC2088  # matching a literal, unexpanded tilde on purpose
+case "$CACHE_DIR" in
+  "~"|"~/"*) CACHE_DIR="$HOME${CACHE_DIR#\~}" ;;
+esac
+[[ "$CACHE_DIR" == /* ]] || CACHE_DIR="$PWD/$CACHE_DIR"
 BUILD_DIR="${BUILD_DIR:-$ROOT/build}"
 LAYOUT_DIR="$ROOT/layout"
 CUSTOM_DIR="$ROOT/custom"
@@ -71,6 +86,76 @@ fw_major() {
 
 qmk_branch() { printf '%s' "${QMK_BRANCH:-firmware$(fw_major)}"; }
 qmk_dir()    { printf '%s' "$CACHE_DIR/qmk_firmware-$(qmk_branch)"; }
+# Per-build QMK userspace holding custom/modules (firmware v25+), outside the QMK tree.
+userspace_dir() { printf '%s' "$CACHE_DIR/userspace-$(qmk_branch)"; }
+
+# Empty when the cache path is usable, else a one-line explanation.
+cache_path_problem() {
+  case "$CACHE_DIR" in
+    *[[:space:]]*) printf 'CACHE_DIR (%s) contains whitespace, which QMK cannot build from. Set CACHE_DIR to a path without spaces, e.g. CACHE_DIR=~/.cache/oryx-overlay make build, or use make docker-build.' "$CACHE_DIR" ;;
+  esac
+}
+
+# A repository URL without a trailing slash or .git, for comparing remotes.
+same_repo_url() { local u="${1%/}"; printf '%s' "${u%.git}"; }
+
+# One build at a time per QMK tree: a second build would reset or restage the
+# tree under the first. The lock is a symlink whose target names its owner
+# ("pid@host"): creating it is atomic and carries the owner in the same step, on
+# macOS and Linux alike. A lock is never taken over automatically, since two
+# builds could both decide it was stale; a dead owner is reported instead.
+acquire_build_lock() {
+  local lock="$1" token owner pid host
+  token="$$@$(uname -n)"
+  # A directory here (e.g. an older lock format) would make ln -s put the link
+  # inside it and "succeed". Refuse it rather than guess whether it is in use.
+  if [[ -d "$lock" ]] && [[ ! -L "$lock" ]]; then
+    die "unexpected directory at $lock (an older build lock?). If no build is running, remove it and build again: rm -rf '$lock'"
+  fi
+  if ! ln -s "$token" "$lock" 2>/dev/null; then
+    owner="$(readlink "$lock" 2>/dev/null)" || owner=""
+    pid="${owner%%@*}" host="${owner#*@}"
+    if [[ "$host" == "$(uname -n)" ]] && [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
+      die "a build lock was left by process $pid, which is no longer running (it was interrupted). Remove it and build again: rm -f '$lock'"
+    fi
+    die "another build (process ${pid:-?} on ${host:-?}) is using this QMK tree. Wait for it to finish, or if it is not running: rm -f '$lock'"
+  fi
+  # Confirm the link is the lock itself, not a link created inside a directory
+  # that appeared after the check above (ln has no portable "no target dir").
+  if [[ ! -L "$lock" ]] || [[ "$(readlink "$lock")" != "$token" ]]; then
+    rm -f "$lock/$token" 2>/dev/null || true
+    die "could not take the build lock at $lock. If no build is running, remove it and build again: rm -rf '$lock'"
+  fi
+  BUILD_LOCK="$lock" BUILD_LOCK_TOKEN="$token"
+  trap '[[ "$(readlink "$BUILD_LOCK" 2>/dev/null)" == "$BUILD_LOCK_TOKEN" ]] && rm -f "$BUILD_LOCK"' EXIT
+}
+
+# Put the cached QMK tree's keyboards/ and modules/ back to exactly ZSA's branch:
+# undo edits to tracked files and delete everything else there (staged keymaps
+# from earlier builds at any keyboard level, modules copied in by older versions
+# of this script). Compiled objects in .build/ are kept for incremental builds.
+reset_qmk_tree() {
+  local dir="$1" top p paths
+  paths=()
+  top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || top=""
+  # Never let git fall through to an enclosing repository (such as this one).
+  if [[ -z "$top" ]] || [[ "$(cd "$top" && pwd -P)" != "$(cd "$dir" && pwd -P)" ]]; then
+    die "$dir is not a git checkout of ZSA's QMK fork. Run 'make update-qmk' to download it again."
+  fi
+  # Only ever build (and reset) the fork and branch this layout needs.
+  local url branch
+  url="$(git -C "$dir" remote get-url origin 2>/dev/null)" || url=""
+  branch="$(git -C "$dir" symbolic-ref --short -q HEAD 2>/dev/null)" || branch=""
+  if [[ "$(same_repo_url "$url")" != "$(same_repo_url "$QMK_REPO")" ]] || [[ "$branch" != "$(qmk_branch)" ]]; then
+    die "$dir is ${url:-an unknown repository} on ${branch:-a detached HEAD}, not $QMK_REPO on $(qmk_branch). Run 'make update-qmk' to download it again."
+  fi
+  for p in keyboards modules; do
+    [[ -d "$dir/$p" ]] && paths+=("$p")
+  done
+  (( ${#paths[@]} )) || return 0
+  git -C "$dir" checkout --quiet -- "${paths[@]}" || die "could not reset $dir"
+  git -C "$dir" clean -ffdxq -- "${paths[@]}" || die "could not clean $dir"
+}
 
 # Keyboard path inside the QMK tree. Before firmware v25 the Moonlander had no
 # revision folders (revision B didn't exist yet), so moonlander/reva -> moonlander.

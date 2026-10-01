@@ -46,8 +46,8 @@ setup: ## Create .venv with the qmk CLI and keymap-drawer (needs Python 3.10+)
 	@echo "Python tools ready. You still need the ARM toolchain: see README > Building locally."
 
 update-qmk: ## Re-download ZSA's QMK fork (e.g. after ZSA patches a firmware branch)
-	@rm -rf .cache/qmk_firmware-*
-	@echo "Removed cached QMK trees; the next build clones fresh."
+	@source scripts/lib.sh && rm -rf "$$CACHE_DIR"/qmk_firmware-* "$$CACHE_DIR"/userspace-* \
+	  && echo "Removed cached QMK trees in $$CACHE_DIR; the next build clones fresh."
 
 clean: ## Remove build output
 	rm -rf build

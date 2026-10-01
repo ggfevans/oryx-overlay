@@ -18,7 +18,7 @@ The user edits keys in Oryx. You help with everything around that: syncing, QMK 
 | `docs/keymap.svg`, `docs/index.html` | Generated | Drawings for humans, plus the Lighting tab (RGB effect picker). Never edit. |
 | `scripts/rgb_effects.js` | Tooling | JavaScript port of QMK's RGB Matrix effects (GPL-2.0-or-later). `tests/test_rgb_effects.py` checks it against the C. |
 | `scripts/` | Tooling | `sync.sh`, `build.sh`, `render.sh`, `oryx_layout.py`, `oryx_fetch.py`. |
-| `.cache/qmk_firmware-firmwareNN/` | Generated | ZSA's QMK fork at the layout's firmware version. Read it to check what a feature supports; never edit it. |
+| `.cache/qmk_firmware-firmwareNN/` | Generated | ZSA's QMK fork at the layout's firmware version. Read it to check what a feature supports; never edit it (every build resets its `keyboards/` and `modules/`). Custom modules are staged in `.cache/userspace-firmwareNN/`. If the repo path has spaces, the cache is under `~/.cache/oryx-overlay/` instead; `make doctor` prints it. |
 
 For lighting questions, read the `## Lighting` section of `docs/keymap.md`: which effects are in the firmware, the RGB Mode and Toggle Layer Colors keys, and whether Oryx layer colours hide effects. To add an effect, the user can tick it in Oryx (Advanced Settings › RGB), or you add `#define ENABLE_RGB_MATRIX_<NAME>` to `custom/config.h`. For an effect only while idle, with layer colours the rest of the time, enable the `oryx_overlay/screensaver` module in `custom/keymap.json` and set `SCREENSAVER_TIMEOUT` / `SCREENSAVER_MODE` in `custom/config.h`.
 

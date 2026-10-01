@@ -32,7 +32,7 @@ flowchart LR
 
 1. `scripts/oryx_fetch.py` asks Oryx's public GraphQL API for your layout's latest revision and downloads the same source zip as Oryx's *Download source* button.
 2. The export is committed to the `oryx` branch, which only ever holds untouched Oryx output. Merging it into `main` replays just what you changed in Oryx on top of any edits in `layout/`. This is the approach [poulainpi/oryx-with-custom-qmk](https://github.com/poulainpi/oryx-with-custom-qmk) proved out.
-3. `scripts/build.sh` copies `layout/` into ZSA's QMK fork (at the firmware version Oryx used), appends `custom/` through `#include` and `-include` lines in that staging copy, and compiles.
+3. `scripts/build.sh` resets ZSA's QMK fork (at the firmware version Oryx used) to its branch, copies `layout/` into it, appends `custom/` through `#include` and `-include` lines in that staging copy, stages `custom/modules/` in a QMK userspace, and compiles.
 
 ## Quick start
 
@@ -57,7 +57,7 @@ Put your changes in `custom/`. Nothing there can conflict with an Oryx export.
 | `custom/rules.mk` | `-include` at the end of Oryx's `rules.mk` | `COMBO_ENABLE = yes`, `SRC += custom/...` |
 | `custom/keymap_extra.c` | `#include` at the end of Oryx's `keymap.c` | Combos, key overrides, helpers |
 | `custom/keymap.json` | `modules` merged into Oryx's list | Enabling [community modules](https://docs.qmk.fm/features/community_modules) |
-| `custom/modules/<owner>/<name>/` | copied into QMK's `modules/` | Per-keypress logic without touching `process_record_user` |
+| `custom/modules/<owner>/<name>/` | a per-build QMK userspace (`QMK_USERSPACE`) | Per-keypress logic without touching `process_record_user` |
 
 Example, home-row mods that stop misfiring:
 
@@ -151,7 +151,9 @@ make sync            # pull from Oryx, merge
 make build           # firmware → build/, drawings → docs/
 ```
 
-The first build clones ZSA's QMK fork into `.cache/` (about a minute).
+The first build clones ZSA's QMK fork into `.cache/` (about a minute). Every build then resets that tree's `keyboards/` and `modules/` to ZSA's branch before staging your keymap, so nothing from an earlier build (another `KEYBOARD`, a module you deleted) can leak into the firmware. Don't keep experiments there; compiled objects in `.build/` are kept, so rebuilds stay fast.
+
+QMK can't build from a path containing spaces. If your repo lives in one (`~/My Projects/...`), the cache moves to `~/.cache/oryx-overlay/` (or `$XDG_CACHE_HOME`) automatically. Set `CACHE_DIR` to put it somewhere else.
 
 **Docker (no toolchain install):** `make docker-build`. The image matches the CI runner (Ubuntu 24.04, arm-none-eabi-gcc 13), so local and CI firmware come from the same compiler. Any target works: `make docker-render`.
 

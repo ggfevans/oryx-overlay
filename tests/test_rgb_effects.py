@@ -46,7 +46,14 @@ def _find(pattern: str) -> str | None:
     return hits[-1] if hits else None
 
 
-QMK = os.environ.get("ORYX_QMK_DIR") or _find(".cache/qmk_firmware-firmware*")
+def _cache_dir() -> str:
+    """CACHE_DIR exactly as scripts/lib.sh resolves it (it moves when the repo path has spaces)."""
+    out = subprocess.run(["bash", "-c", 'source "$1/scripts/lib.sh" && printf %s "$CACHE_DIR"', "_", str(ROOT)],
+                         capture_output=True, text=True)
+    return out.stdout if out.returncode == 0 and out.stdout else str(ROOT / ".cache")
+
+
+QMK = os.environ.get("ORYX_QMK_DIR") or _find(os.path.join(_cache_dir(), "qmk_firmware-firmware*"))
 INFO = os.environ.get("ORYX_INFO_JSON") or _find("build/info-*.json")
 pytestmark = pytest.mark.skipif(
     not (QMK and INFO and shutil.which("gcc") and shutil.which("node")),

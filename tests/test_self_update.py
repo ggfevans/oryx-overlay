@@ -268,3 +268,31 @@ def test_manifest_covers_every_tooling_file():
     uncovered = [f for f in files
                  if f.split("/")[0] not in user and not any(f == e or f.startswith(e + "/") for e in entries)]
     assert uncovered == [], "add to .oryx-overlay-manifest (template-owned) or move: " + ", ".join(uncovered)
+
+
+def test_symlinked_folder_is_not_written_through(tmp_path, up):
+    user = make_user(tmp_path / "user", up)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    os.symlink(outside, user / "new")  # v2 adds new/added.txt
+    git(user, "add", "-A")
+    git(user, "commit", "-qm", "symlinked folder")
+    release_v2(up)
+    r = run(user, up)
+    assert r.returncode == 0, r.stderr
+    assert not (outside / "added.txt").exists()
+    assert "a folder above it is a symlink" in r.stderr
+
+
+def test_concurrent_self_update_is_refused(tmp_path, up):
+    user = make_user(tmp_path / "user", up)
+    release_v2(up)
+    host = subprocess.run(["uname", "-n"], capture_output=True, text=True, check=True).stdout.strip()
+    lock = user / ".git/oryx-overlay-update.lock"
+    os.symlink(f"{os.getpid()}@{host}", lock)  # a live owner: this test
+    r = run(user, up)
+    assert r.returncode != 0 and "another self-update" in r.stderr
+    assert (user / ".oryx-overlay-version").read_text() == "v1.0.0\n"  # nothing touched
+    lock.unlink()
+    assert run(user, up).returncode == 0
+    assert not os.path.lexists(lock)  # released on exit

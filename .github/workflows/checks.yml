@@ -4,9 +4,9 @@ name: Checks
 on:
   push:
     branches: [main]
-    paths: ["scripts/**", "tests/**", ".github/workflows/**", "Makefile", "modules/**", "custom/modules/**", ".oryx-overlay-manifest"]
+    paths: ["scripts/**", "tests/**", ".github/workflows/**", "Makefile", "modules/**", "custom/modules/**", ".oryx-overlay-manifest", ".oryx-overlay-version"]
   pull_request:
-    paths: ["scripts/**", "tests/**", ".github/workflows/**", "Makefile", "modules/**", "custom/modules/**", ".oryx-overlay-manifest"]
+    paths: ["scripts/**", "tests/**", ".github/workflows/**", "Makefile", "modules/**", "custom/modules/**", ".oryx-overlay-manifest", ".oryx-overlay-version"]
   workflow_dispatch:
 
 permissions:

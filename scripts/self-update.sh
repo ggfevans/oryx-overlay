@@ -55,6 +55,8 @@ main() {
     die "working tree has uncommitted changes; commit or stash them first, so the upgrade is easy to review and undo"
   fi
 
+  # One self-update at a time: they share the fetched refs and the working tree.
+  acquire_lock "$(git rev-parse --absolute-git-dir)/oryx-overlay-update.lock" self-update
   TMP="$(mktemp -d "${TMPDIR:-/tmp}/oryx-overlay-update.XXXXXX")"
   trap cleanup EXIT
 
@@ -149,6 +151,19 @@ cleanup() {
   git for-each-ref --format='%(refname)' "$NS/" 2>/dev/null | while IFS= read -r ref; do
     git update-ref -d "$ref" 2>/dev/null || true
   done
+  release_lock
+}
+
+# True if no existing part of the path above the file is a symlink, so writing
+# or deleting it can't reach outside this repository.
+parents_are_real() {
+  local dir
+  dir="$(dirname "$1")"
+  while [[ "$dir" != "." ]] && [[ "$dir" != "/" ]]; do
+    [[ -L "$dir" ]] && return 1
+    dir="$(dirname "$dir")"
+  done
+  return 0
 }
 
 # Commit for a name in the template: tag, then branch, then a commit id.
@@ -214,6 +229,10 @@ update_path() {
   base="$(entry "$from" "$path")"
   theirs="$(entry "$to" "$path")"
   bmode="${base%% *}" bsha="${base##* }" tmode="${theirs%% *}" tsha="${theirs##* }"
+  if ! parents_are_real "$path"; then
+    NOTES+=("skipped $path: a folder above it is a symlink here, so writing it could reach outside this repo")
+    return
+  fi
   if [[ -L "$path" ]] || { [[ -e "$path" ]] && [[ ! -f "$path" ]]; }; then
     NOTES+=("skipped $path: not a regular file here")
     return

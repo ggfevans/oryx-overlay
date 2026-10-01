@@ -246,7 +246,9 @@ def test_unknown_base_and_explicit_refs(tmp_path, up):
     git(user, "add", "-A")
     git(user, "commit", "-qm", "version")
     r = run(user, up)
-    assert r.returncode != 0 and "v0.9.9" in r.stderr and "FROM=" in r.stderr
+    assert r.returncode != 0 and "v0.9.9 (from .oryx-overlay-version)" in r.stderr and "FROM=" in r.stderr
+    r = run(user, up, FROM="v0.9.8")
+    assert r.returncode != 0 and "v0.9.8 (from FROM)" in r.stderr
     # A branch is recorded by commit, since branches move.
     r = run(user, up, FROM="v1.0.0", TO="main")
     assert r.returncode == 0, r.stderr

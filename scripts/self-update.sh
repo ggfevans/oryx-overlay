@@ -71,8 +71,10 @@ main() {
   fi
   [[ -n "$from_name" ]] \
     || die "$VERSION_FILE is missing, so the template version this repo started from is unknown. Rerun with FROM=<tag or commit of the template you copied>, e.g. FROM=v0.1.0 make self-update"
+  local from_src="$VERSION_FILE"
+  [[ -n "${FROM:-}" ]] && from_src="FROM"
   from="$(resolve "$from_name")" \
-    || die "$from_name (from ${FROM:+FROM}${FROM:-$VERSION_FILE}) is not a tag, branch or commit in $UPSTREAM. Rerun with FROM=<tag or commit of the template you copied>."
+    || die "$from_name (from $from_src) is not a tag, branch or commit in $UPSTREAM. Rerun with FROM=<tag or commit of the template you copied>."
 
   to_name="${TO:-}"
   if [[ -z "$to_name" ]]; then

@@ -198,14 +198,18 @@ It needs a clean working tree. It fetches the template, and for each template-ow
 - `layout/`, `custom/`, `oryx.conf` and `docs/` are never written. To keep a template path as you have it (say you rewrote this README), list it in `.oryx-overlay-keep`.
 - The result is left uncommitted, with the new release's CHANGELOG entries printed. To back out: `git reset --hard`.
 
-If your repo predates `make self-update`, fetch the script once, then pass the release you started from:
+If your repo predates `make self-update`, fetch the script and its helpers from the release you are upgrading to, then pass both releases:
 
 ```sh
-git fetch https://github.com/ggfevans/oryx-overlay.git main
-git show FETCH_HEAD:scripts/self-update.sh > scripts/self-update.sh && chmod +x scripts/self-update.sh
-git add scripts/self-update.sh && git commit -m "template: add self-update"
-FROM=v0.1.0 scripts/self-update.sh
+TO=v0.2.0   # the release you are upgrading to
+git fetch https://github.com/ggfevans/oryx-overlay.git "refs/tags/$TO"
+for f in scripts/self-update.sh scripts/lib.sh; do git show "FETCH_HEAD:$f" > "$f"; done
+chmod +x scripts/self-update.sh
+git add scripts/self-update.sh scripts/lib.sh && git commit -m "template: add self-update"
+FROM=v0.1.0 TO=$TO scripts/self-update.sh
 ```
+
+Taking both files from that same release means they match it exactly, so the upgrade treats them as already up to date.
 
 Older copies keep the bundled modules in `custom/modules/`. Self-update leaves your copies there, and they keep replacing the template's `modules/` until you delete them (it tells you which).
 

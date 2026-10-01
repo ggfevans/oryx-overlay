@@ -57,8 +57,9 @@ main() {
 
   # One self-update at a time: they share the fetched refs and the working tree.
   acquire_lock "$(git rev-parse --absolute-git-dir)/oryx-overlay-update.lock" self-update
-  TMP="$(mktemp -d "${TMPDIR:-/tmp}/oryx-overlay-update.XXXXXX")"
-  trap cleanup EXIT
+  trap cleanup EXIT  # before anything else can fail, so the lock is always released
+  TMP="$(mktemp -d "${TMPDIR:-/tmp}/oryx-overlay-update.XXXXXX")" \
+    || die "could not create a temporary folder (check TMPDIR)"
 
   log "Fetching $UPSTREAM"
   git fetch --quiet --no-tags "$UPSTREAM" "+refs/heads/*:$NS/heads/*" "+refs/tags/*:$NS/tags/*" \

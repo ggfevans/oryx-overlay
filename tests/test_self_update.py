@@ -298,3 +298,11 @@ def test_concurrent_self_update_is_refused(tmp_path, up):
     lock.unlink()
     assert run(user, up).returncode == 0
     assert not os.path.lexists(lock)  # released on exit
+
+
+def test_lock_released_when_temp_folder_fails(tmp_path, up):
+    user = make_user(tmp_path / "user", up)
+    release_v2(up)
+    r = run(user, up, TMPDIR=str(tmp_path / "missing"))
+    assert r.returncode != 0 and "temporary folder" in r.stderr
+    assert not os.path.lexists(user / ".git/oryx-overlay-update.lock")

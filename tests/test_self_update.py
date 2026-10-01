@@ -166,6 +166,11 @@ def test_conflicting_edits_leave_markers_and_fail(tmp_path, up):
     # Everything else still went through, and the version moved with it.
     assert (user / "new/added.txt").exists()
     assert (user / ".oryx-overlay-version").read_text() == "v2.0.0\n"
+    # The suggested way out puts everything back, added files included.
+    assert "git reset --hard" in r.stderr
+    git(user, "reset", "-q", "--hard")
+    assert git(user, "status", "--porcelain", "--untracked-files=all") == ""
+    assert (user / ".oryx-overlay-version").read_text() == "v1.0.0\n"
 
 
 def test_user_paths_are_never_written(tmp_path, up):

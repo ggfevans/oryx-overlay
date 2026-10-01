@@ -32,7 +32,7 @@ VERSION_FILE=".oryx-overlay-version"
 MANIFEST=".oryx-overlay-manifest"
 KEEP_FILE=".oryx-overlay-keep"
 NS="refs/oryx-overlay"
-ABANDON="To abandon the upgrade instead: git reset --hard && git clean -fd -- . ':(exclude)docs'"
+ABANDON="To abandon the upgrade instead: git reset --hard"
 
 # Everything runs inside main, and the last line calls it and exits in one go:
 # this script is itself template-owned and may be rewritten while it runs, and

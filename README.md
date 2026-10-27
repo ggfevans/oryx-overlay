@@ -229,6 +229,13 @@ To check Oryx on a schedule, set the repository variable `ORYX_SYNC_SCHEDULE` to
 
 **Flashed and nothing works.** Moonlander revision A and B firmware aren't interchangeable. Check `KEYBOARD` against your board's bootloader name (see Quick start).
 
+**`bash\r: No such file or directory` or `pipefail: invalid option name` (Windows, WSL, Docker Desktop).** Git for Windows checked the scripts out with CRLF line endings (`core.autocrlf=true`). `.gitattributes` stops this for new clones, but doesn't rewrite files already checked out, and `make self-update` can't start while its own script is CRLF. Commit or stash your work first, then re-check out every file with LF; this runs no repo script:
+
+```sh
+git config core.autocrlf false
+git rm -r --cached -q . && git reset --hard
+```
+
 ## Related projects
 
 - [poulainpi/oryx-with-custom-qmk](https://github.com/poulainpi/oryx-with-custom-qmk): the original Oryx + custom QMK merge workflow, and the idea this template builds on. oryx-overlay adds the zero-conflict `custom/` overlay, community modules, local and Docker builds, drawings, layout checks and Claude Code integration.

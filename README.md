@@ -12,6 +12,7 @@ A template repo for Moonlander, Voyager, ErgoDox EZ and Planck EZ owners who lik
 
 - **Two-way safe customisation.** Keep editing keys in Oryx. Your QMK code lives in `custom/`, which Oryx never touches, and is layered on at build time. For the rare edit that has to go inside Oryx's code, a git merge carries it across Oryx updates.
 - **Firmware builds in CI.** Press *Run workflow* after changing your layout in Oryx, and a `.bin` ready for Keymapp is waiting in the artifacts. Local builds work the same way, natively or in Docker.
+- **Pinned actions.** Workflow actions are pinned to commit SHAs, and the template's `.github/dependabot.yml` (which repos made from it inherit) opens one weekly PR to bump them.
 - **A keymap you can see.** Every build redraws `docs/keymap.svg` with [keymap-drawer](https://github.com/caksoylar/keymap-drawer), using your Oryx layer names and LED colours, plus `docs/index.html`, an interactive viewer you can publish with GitHub Pages.
 - **A lighting effect picker.** Every RGB effect your board supports plays on your own layout, using a JavaScript port of QMK's effect code that CI checks byte for byte against the real firmware. It shows which effects your firmware actually includes, where your RGB Mode key is, and how to switch the rest on.
 - **Readable history.** Oryx syncs are commits with key-level changelogs (`Base R1.3: W → F`), and `make diff` shows the same for any range.

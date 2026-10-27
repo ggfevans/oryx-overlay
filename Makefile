@@ -8,6 +8,16 @@ DOCKER ?= docker
 IMAGE ?= oryx-overlay-env
 REF ?= HEAD
 
+# Settings the environment may override, read from scripts/lib.sh so the two can't drift.
+CONFIG_KEYS := $(shell sed -n 's/^CONFIG_KEYS="\(.*\)"$$/\1/p' scripts/lib.sh)
+# Git identity for the container (docker-sync commits to the oryx branch). An identity
+# already in the environment wins; otherwise take the host's git config.
+GIT_AUTHOR_NAME ?= $(shell git config user.name 2>/dev/null)
+GIT_AUTHOR_EMAIL ?= $(shell git config user.email 2>/dev/null)
+GIT_COMMITTER_NAME ?= $(GIT_AUTHOR_NAME)
+GIT_COMMITTER_EMAIL ?= $(GIT_AUTHOR_EMAIL)
+GIT_KEYS := GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+
 .PHONY: help sync build render diff lint doctor setup check test update-qmk self-update clean docker-image
 
 help: ## Show this help
@@ -60,9 +70,16 @@ clean: ## Remove build output
 docker-image: ## Build the toolchain image
 	$(DOCKER) build -t $(IMAGE) -f docker/Dockerfile .
 
+# Exported for this target only: `-e NAME` makes docker read the value from the environment,
+# so names with spaces or apostrophes need no quoting. Only non-empty values are forwarded.
+docker-%: export GIT_AUTHOR_NAME := $(GIT_AUTHOR_NAME)
+docker-%: export GIT_AUTHOR_EMAIL := $(GIT_AUTHOR_EMAIL)
+docker-%: export GIT_COMMITTER_NAME := $(GIT_COMMITTER_NAME)
+docker-%: export GIT_COMMITTER_EMAIL := $(GIT_COMMITTER_EMAIL)
 docker-%: docker-image ## Run any target in the container, e.g. make docker-build
 	$(DOCKER) run --rm -t -v "$(CURDIR)":/work -w /work \
 	  --user "$$(id -u):$$(id -g)" -e HOME=/tmp \
+	  $(foreach k,$(CONFIG_KEYS) $(GIT_KEYS),$(if $($(k)),-e $(k))) \
 	  $(IMAGE) make $*
 
 ## ---- tooling -------------------------------------------------------------------

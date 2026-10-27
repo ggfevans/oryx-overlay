@@ -158,7 +158,7 @@ The first build clones ZSA's QMK fork into `.cache/` (about a minute). Every bui
 
 QMK can't build from a path containing spaces. If your repo lives in one (`~/My Projects/...`), the cache moves to `~/.cache/oryx-overlay/` (or `$XDG_CACHE_HOME`) automatically. Set `CACHE_DIR` to put it somewhere else.
 
-**Docker (no toolchain install):** `make docker-build`. The image matches the CI runner (Ubuntu 24.04, arm-none-eabi-gcc 13), so local and CI firmware come from the same compiler. Any target works: `make docker-render`.
+**Docker (no toolchain install):** `make docker-build`. The image matches the CI runner (Ubuntu 24.04, arm-none-eabi-gcc 13), so local and CI firmware come from the same compiler. Any target works: `make docker-render`. Environment overrides (`KEYBOARD=moonlander/revb make docker-build`) and your host `git config user.name`/`user.email` are passed into the container, so `make docker-sync` can commit.
 
 **Native:**
 - *Linux (Debian/Ubuntu):* `sudo apt install gcc-arm-none-eabi libnewlib-arm-none-eabi binutils-arm-none-eabi dfu-util`, then `make setup` for the qmk CLI and keymap-drawer in `.venv/`.

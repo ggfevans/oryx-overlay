@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `.gitattributes` forces LF line endings (images stay binary), so a Windows clone with `core.autocrlf=true` no longer gets CRLF scripts that fail with `bash\r: No such file or directory`; `load_config` also ignores a CR in `oryx.conf`. `.gitattributes` is template-owned, so `make self-update` ships it. Covered by `tests/test_line_endings.py`. (#8)
 - `make self-update [TO=<ref>]` brings a repo made with *Use this template* up to a newer template release, with no shared history needed: a 3-way merge per file between the release in `.oryx-overlay-version`, your copy and the new release, for the template-owned paths in `.oryx-overlay-manifest`. Conflicts get markers and a non-zero exit; files the template removed are deleted only if unchanged; `layout/`, `custom/`, `oryx.conf` and `docs/` are never written, nor paths in `.oryx-overlay-keep`. The result is left uncommitted. Covered by `tests/test_self_update.py`. (#25)
 - Bundled modules moved from `custom/modules/` to a template-owned `modules/`, so fixes reach existing copies. Module names are unchanged (`oryx_overlay/screensaver`, `example/hello_overlay`), so `custom/keymap.json` keeps working. `build.sh` stages `modules/` first, then `custom/modules/`; a module of yours with the same name replaces the template's, and the build log says so. (#25)
 - The scheduled Oryx sync is switched on by the repository variable `ORYX_SYNC_SCHEDULE=true` instead of a workflow edit. (#25)

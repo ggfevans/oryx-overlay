@@ -56,8 +56,8 @@ load_config() {
   for k in $CONFIG_KEYS; do
     if [[ -n "${!k:-}" ]]; then saved="$saved $k"; eval "__env_$k=\${!k}"; fi
   done
-  # shellcheck source=/dev/null
-  source "$ROOT/oryx.conf"
+  # Drop any CR so a CRLF checkout (Windows autocrlf) still loads.
+  eval "$(tr -d '\r' < "$ROOT/oryx.conf")"
   for k in $saved; do eval "$k=\$__env_$k"; done
 
   : "${ORYX_LAYOUT_ID:?set ORYX_LAYOUT_ID in oryx.conf}"

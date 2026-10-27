@@ -4,7 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 # Any line that mentions `uses:` as a key; validated below, never skipped.
-USES = re.compile(r"^\s*(?:-\s*)?["']?uses["']?\s*:\s*(.*)$")
+USES = re.compile(r"""^\s*(?:-\s*)?["']?uses["']?\s*:\s*(.*)$""")
 
 
 def unpinned(text, name="workflow"):

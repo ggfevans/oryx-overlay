@@ -4,7 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 # Any line that mentions `uses:` as a key; validated below, never skipped.
-USES = re.compile(r"^\s*(?:-\s*)?uses:\s*(.*)$")
+USES = re.compile(r"^\s*(?:-\s*)?["']?uses["']?\s*:\s*(.*)$")
 
 
 def unpinned(text, name="workflow"):
@@ -18,7 +18,7 @@ def unpinned(text, name="workflow"):
         ref = value.strip().strip("'\"")
         if ref.startswith("./"):
             continue
-        if not re.fullmatch(r"[^\s@]+@[0-9a-f]{40}", ref) or not re.search(r"\bv\d", comment):
+        if not re.fullmatch(r"[^\s@]+@[0-9a-f]{40}", ref) or not re.fullmatch(r"v\d+\.\d+\.\d+", comment.strip()):
             bad.append(f"{name}:{n}: {line.strip()}")
     return bad
 
@@ -45,6 +45,17 @@ def test_checker_rejects_tag_with_explanatory_comment():
 def test_checker_rejects_sha_without_version_comment():
     assert unpinned(f"- uses: actions/checkout@{SHA}\n")
     assert unpinned(f"- uses: actions/checkout@{SHA} # latest\n")
+
+
+def test_checker_rejects_quoted_key():
+    assert unpinned('- "uses": actions/checkout@v7\n')
+    assert unpinned("- 'uses': actions/checkout@v7\n")
+    assert unpinned(f'- "uses": actions/checkout@{SHA} # v7.0.1\n') == []
+
+
+def test_checker_requires_full_release_tag():
+    assert unpinned(f"- uses: actions/checkout@{SHA} # v7\n")
+    assert unpinned(f"- uses: actions/checkout@{SHA} # note v7.0.1\n")
 
 
 def test_checker_rejects_odd_forms():

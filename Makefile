@@ -10,13 +10,15 @@ REF ?= HEAD
 
 # Settings the environment may override, read from scripts/lib.sh so the two can't drift.
 MAKEFILE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
-CONFIG_KEYS := $(shell sed -n 's/^CONFIG_KEYS="\(.*\)"$$/\1/p' '$(MAKEFILE_DIR)scripts/lib.sh')
+# Single-quote-safe path for the shell call below (the repo path may contain an apostrophe).
+SQ_LIB := $(subst ','\'',$(MAKEFILE_DIR)scripts/lib.sh)
+CONFIG_KEYS := $(shell sed -n 's/^CONFIG_KEYS="\(.*\)"$$/\1/p' '$(SQ_LIB)')
 # Git identity for the container (docker-sync commits to the oryx branch). An identity
 # already in the environment wins; otherwise take the host's git config.
 GIT_AUTHOR_NAME ?= $(shell git config user.name 2>/dev/null)
 GIT_AUTHOR_EMAIL ?= $(shell git config user.email 2>/dev/null)
-GIT_COMMITTER_NAME ?= $(GIT_AUTHOR_NAME)
-GIT_COMMITTER_EMAIL ?= $(GIT_AUTHOR_EMAIL)
+GIT_COMMITTER_NAME ?= $(shell git config user.name 2>/dev/null)
+GIT_COMMITTER_EMAIL ?= $(shell git config user.email 2>/dev/null)
 GIT_KEYS := GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
 
 .PHONY: help sync build render diff lint doctor setup check test update-qmk self-update clean docker-image

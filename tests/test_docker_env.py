@@ -96,3 +96,25 @@ def test_anchored_to_makefile_dir_and_errors_when_keys_missing(tmp_path):
     assert r.returncode != 0 and "CONFIG_KEYS" in r.stderr
     r = subprocess.run(["make", "help"], cwd=tmp_path, capture_output=True, text=True, env=env)
     assert r.returncode == 0
+
+
+def test_repo_path_with_apostrophe_and_space(tmp_path):
+    repo = tmp_path / "it's a repo"
+    (repo / "scripts").mkdir(parents=True)
+    shutil.copy(ROOT / "Makefile", repo / "Makefile")
+    shutil.copy(ROOT / "scripts/lib.sh", repo / "scripts/lib.sh")
+    r = subprocess.run(["make", "-n", "docker-build"], cwd=repo, capture_output=True, text=True,
+                       env=host_env(tmp_path, {"KEYBOARD": "moonlander/revb"}))
+    assert r.returncode == 0, r.stderr
+    assert "-e KEYBOARD" in r.stdout
+
+
+def test_committer_falls_back_to_host_config_independently(tmp_path):
+    fake = tmp_path / "docker"
+    fake.write_text('#!/bin/sh\n[ "$1" = run ] && printf "%s|%s|%s|%s" "$GIT_AUTHOR_NAME" '
+                    '"$GIT_COMMITTER_NAME" "$GIT_AUTHOR_EMAIL" "$GIT_COMMITTER_EMAIL"\nexit 0\n')
+    fake.chmod(0o755)
+    r = subprocess.run(["make", f"DOCKER={fake}", "docker-build"], cwd=ROOT, capture_output=True, text=True,
+                       env=host_env(tmp_path, {"GIT_AUTHOR_NAME": "Env Person"}))
+    assert r.returncode == 0, r.stderr
+    assert "Env Person|Ada O'Neil|ada@example.com|ada@example.com" in r.stdout

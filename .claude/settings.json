@@ -29,6 +29,10 @@
     "deny": [
       "Bash(qmk flash *)",
       "Bash(make *flash*)",
+      "Bash(make *:dfu*)",
+      "Bash(make *:teensy*)",
+      "Bash(make *:avrdude*)",
+      "Bash(make *:st-*)",
       "Bash(dfu-util *)",
       "Bash(wally-cli *)",
       "Bash(git push --force *)",

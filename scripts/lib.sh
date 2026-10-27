@@ -62,7 +62,12 @@ load_config() {
 
   : "${ORYX_LAYOUT_ID:?set ORYX_LAYOUT_ID in oryx.conf}"
   : "${KEYBOARD:?set KEYBOARD in oryx.conf}"
-  KEYMAP_NAME="${KEYMAP_NAME:-oryx-overlay}"
+  # Unset gets the default; an empty value is an error, not a silent default.
+  KEYMAP_NAME="${KEYMAP_NAME-oryx-overlay}"
+  # It ends up in `make $KB:$KEYMAP_NAME` and `rm -rf .../keymaps/$KEYMAP_NAME`, so a
+  # `:dfu-util` suffix would flash and `../..` would delete outside the keymaps folder.
+  [[ "$KEYMAP_NAME" =~ ^[A-Za-z0-9_-]+$ ]] \
+    || die "KEYMAP_NAME '$KEYMAP_NAME' is invalid: use only letters, digits, '_' and '-' (A-Za-z0-9_-)"
   LEGEND_STYLE="${LEGEND_STYLE:-pc}"
   # Oryx names geometries after the board family: moonlander, voyager, ergodox-ez, planck-ez.
   ORYX_GEOMETRY="${ORYX_GEOMETRY:-$(printf '%s' "${KEYBOARD%%/*}" | tr '_' '-')}"

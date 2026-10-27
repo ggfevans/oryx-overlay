@@ -9,7 +9,8 @@ IMAGE ?= oryx-overlay-env
 REF ?= HEAD
 
 # Settings the environment may override, read from scripts/lib.sh so the two can't drift.
-CONFIG_KEYS := $(shell sed -n 's/^CONFIG_KEYS="\(.*\)"$$/\1/p' scripts/lib.sh)
+MAKEFILE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+CONFIG_KEYS := $(shell sed -n 's/^CONFIG_KEYS="\(.*\)"$$/\1/p' '$(MAKEFILE_DIR)scripts/lib.sh')
 # Git identity for the container (docker-sync commits to the oryx branch). An identity
 # already in the environment wins; otherwise take the host's git config.
 GIT_AUTHOR_NAME ?= $(shell git config user.name 2>/dev/null)
@@ -77,6 +78,7 @@ docker-%: export GIT_AUTHOR_EMAIL := $(GIT_AUTHOR_EMAIL)
 docker-%: export GIT_COMMITTER_NAME := $(GIT_COMMITTER_NAME)
 docker-%: export GIT_COMMITTER_EMAIL := $(GIT_COMMITTER_EMAIL)
 docker-%: docker-image ## Run any target in the container, e.g. make docker-build
+	$(if $(CONFIG_KEYS),,$(error CONFIG_KEYS not found in scripts/lib.sh; docker-* cannot forward overrides))
 	$(DOCKER) run --rm -t -v "$(CURDIR)":/work -w /work \
 	  --user "$$(id -u):$$(id -g)" -e HOME=/tmp \
 	  $(foreach k,$(CONFIG_KEYS) $(GIT_KEYS),$(if $($(k)),-e $(k))) \

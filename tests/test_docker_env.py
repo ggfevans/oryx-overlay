@@ -78,4 +78,21 @@ def test_identity_value_survives_quoting(tmp_path):
 def test_environment_identity_wins(tmp_path):
     r = subprocess.run(["make", f"DOCKER={fake_docker(tmp_path)}", "docker-build"], cwd=ROOT,
                        capture_output=True, text=True, env=host_env(tmp_path, {"GIT_AUTHOR_NAME": "Env Person"}))
+    assert r.returncode == 0, r.stderr
     assert "Env Person|" in r.stdout
+
+
+def test_anchored_to_makefile_dir_and_errors_when_keys_missing(tmp_path):
+    env = host_env(tmp_path)
+    # -C from elsewhere still finds lib.sh
+    r = subprocess.run(["make", "-n", "-f", str(ROOT / "Makefile"), "-C", str(tmp_path), "docker-build"],
+                       capture_output=True, text=True, env=env)
+    assert r.returncode == 0 and "-e HOME=/tmp" in r.stdout, r.stderr
+    # a reformatted lib.sh fails docker-* loudly, but not other targets
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts/lib.sh").write_text("CONFIG_KEYS=\"\"\n")
+    shutil.copy(ROOT / "Makefile", tmp_path / "Makefile")
+    r = subprocess.run(["make", "-n", "docker-build"], cwd=tmp_path, capture_output=True, text=True, env=env)
+    assert r.returncode != 0 and "CONFIG_KEYS" in r.stderr
+    r = subprocess.run(["make", "help"], cwd=tmp_path, capture_output=True, text=True, env=env)
+    assert r.returncode == 0

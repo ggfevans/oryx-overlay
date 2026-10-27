@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Check out
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # When called from the sync workflow, build the branch head (with the new merge),
           # not the commit that started the run.
@@ -46,7 +46,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
           cache: pip
@@ -71,7 +71,7 @@ jobs:
           echo "sha=${sha:-unknown}" >> "$GITHUB_OUTPUT"
 
       - name: Cache ZSA QMK tree
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/qmk_firmware-${{ steps.fw.outputs.branch }}
           key: qmk-${{ steps.fw.outputs.branch }}-${{ steps.fw.outputs.sha }}
@@ -96,7 +96,7 @@ jobs:
           echo "name=$(basename "${fw%.*}")-${rev}" >> "$GITHUB_OUTPUT"
 
       - name: Upload firmware
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.name.outputs.name }}
           path: |
@@ -132,7 +132,7 @@ jobs:
 
       - name: Keep refreshed drawings
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: docs
           path: docs
@@ -146,13 +146,13 @@ jobs:
       contents: write
     steps:
       - name: Check out main
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 0
 
       - name: Replace docs with the fresh drawings
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: docs
           path: docs

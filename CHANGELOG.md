@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- TG, TO, OSL, DF, TT and MO keys are described as what they do ("Toggles Layer 1 on/off", "Switches to", "Next key only on", ...) in the viewer and drawn as `TG Layer 1` in `keymap.md`, instead of as tap/hold keys (only LT and mod-taps are). Layers without a name in Oryx are called `Layer 0`, `Layer 1`, ... (was `L0`, `L1`), and a layer name is never printed next to a position (`L4.5 on Layer 1`, `**Layer 0** (L0.1)`), so they no longer read as the same thing. Covered by `tests/test_oryx_layout.py`. (#45)
+
 - A layer named with a leading `-` (e.g. `-Nav`) no longer blanks every drawing: layers are selected with `--select-layers=NAME`, so keymap-drawer's argparse can't read the name as a flag. Covered by `tests/test_oryx_layout.py`. (#18)
 - The viewer's embedded JSON escapes `<`, `>`, `&`, U+2028 and U+2029 as `\uXXXX` (was only `</`), so a layer name like `<!--<script` can't blank the viewer by pushing the HTML parser into its double-escaped script state. Covered by `tests/test_oryx_layout.py`. (#11)
 - `make docker-<target>` forwards the settings `load_config` lets the environment override (`KEYBOARD`, `ORYX_LAYOUT_ID`, `KEYMAP_NAME`, `LEGEND_STYLE`, `ORYX_GEOMETRY`, `QMK_BRANCH`) when set, read from `CONFIG_KEYS` in `scripts/lib.sh` so the lists can't drift, so `KEYBOARD=moonlander/revb make docker-build` no longer silently builds rev A. It also passes the host's git identity (`GIT_AUTHOR_*`/`GIT_COMMITTER_*`, from `git config`, environment wins), so `make docker-sync` can commit to the `oryx` branch. Covered by `tests/test_docker_env.py`. (#9)

@@ -156,7 +156,7 @@ def test_parse_layers_rows_and_ledmap(four_layers):
 
 
 def test_layer_names_fall_back(four_layers):
-    assert [l.name for l in four_layers.layers] == ["Base", "L1", "L2", "L3"]
+    assert [l.name for l in four_layers.layers] == ["Base", "Layer 1", "Layer 2", "Layer 3"]
 
 
 def test_dual_function_keys(four_layers):
@@ -171,13 +171,17 @@ def test_dual_function_keys(four_layers):
         ("mac", "MT(MOD_LGUI, KC_A)", "A/⌘"),
         ("mac", "LCTL(LSFT(KC_Z))", "⌃⇧Z"),
         ("pc", "LCTL(LSFT(KC_Z))", "Ctrl+Shift+Z"),
-        ("pc", "LT(1, KC_SPACE)", "Space/L1"),
-        ("pc", "TG(2)", "L2/toggle"),
+        ("pc", "LT(1, KC_SPACE)", "Space/Layer 1"),
+        ("pc", "TG(2)", "TG Layer 2"),
+        ("pc", "TO(2)", "TO Layer 2"),
+        ("pc", "OSL(2)", "OSL Layer 2"),
+        ("pc", "DF(2)", "DF Layer 2"),
+        ("pc", "MO(2)", "Layer 2"),
         ("mac", "OSM(MOD_LSFT)", "⇧/one-shot"),
         ("pc", "KC_TRANSPARENT", "▽"),
         ("pc", "KC_NO", "·"),
         ("mac", "DUAL_FUNC_0", "$/⌘"),
-        ("pc", "DUAL_FUNC_1", "Ctrl/L3"),
+        ("pc", "DUAL_FUNC_1", "Ctrl/Layer 3"),
         ("pc", "MT(MOD_LSFT | MOD_LCTL | MOD_LALT, KC_F)", "F/Meh"),
         ("pc", "ST_MACRO_3", "Macro 3"),
         ("pc", "TD(DANCE_2)", "Dance 2"),
@@ -185,6 +189,49 @@ def test_dual_function_keys(four_layers):
 )
 def test_legends(four_layers, style, raw, text):
     assert ol.Labeller(four_layers, style).legend(raw).text() == text
+
+
+@pytest.mark.parametrize(
+    "raw,desc",
+    [
+        ("MO(2)", "Hold for Layer 2."),
+        ("TG(2)", "Toggles Layer 2 on/off."),
+        ("TO(2)", "Switches to Layer 2."),
+        ("OSL(2)", "Next key only on Layer 2."),
+        ("DF(2)", "Sets Layer 2 as the default layer."),
+    ],
+)
+def test_layer_keys_are_not_tap_hold(four_layers, raw, desc):
+    lg = ol.Labeller(four_layers).legend(raw)
+    assert lg.kind == "layer" and lg.hold == "" and lg.desc == desc
+    assert "/" not in lg.text()
+
+
+def test_tap_hold_layer_keys_keep_hold(four_layers):
+    lg = ol.Labeller(four_layers).legend("LT(1, KC_SPACE)")
+    assert (lg.tap, lg.hold, lg.desc) == ("Space", "Layer 1", "")
+
+
+def test_unnamed_layer_fallback_is_not_position_like():
+    km = ol.parse_keymap(make_keymap([base_keys(), filler(), filler()]))
+    ol.assign_layer_names(km, None)
+    assert [l.name for l in km.layers] == ["Layer 0", "Layer 1", "Layer 2"]
+    assert ol.Labeller(km).layer("1") == "Layer 1"
+
+
+def test_no_layer_name_next_to_position(tmp_path, capsys):
+    """Unnamed layers must never read as `L1 L4.5` (layer name beside a position)."""
+    import re
+    km = ol.parse_keymap(make_keymap([base_keys(), filler(), filler()]))
+    km.layers[1].keys[3] = "TOGGLE_LAYER_COLOR"
+    km.layers[1].keys[4] = "RGB_MODE_FORWARD"
+    ol.assign_layer_names(km, None)
+    lab = ol.Labeller(km)
+    geo = ol.Geometry.build(make_info(), km)
+    light = ol.lighting_data(km, lab, geo, lighting_info(), [])
+    md = ol.render_markdown(km, lab, geo, {}, None, light)
+    assert "RGB Mode key: L0.4 on Layer 1" in md
+    assert not re.search(r"\bL(?:ayer )?\d+\s+[LR]\d+\.\d+", md)
 
 
 def test_geometry_rows_and_positions(four_layers):
@@ -214,7 +261,7 @@ def test_led_colours_map_to_keys(four_layers):
 def test_lint(four_layers):
     issues = ol.lint(four_layers, ol.Labeller(four_layers))
     text = "\n".join(m for _, m in issues)
-    assert "L2: entered with TG" not in text  # has TO(0) to leave
+    assert "Layer 2: entered with TG" not in text  # has TO(0) to leave
     assert all(lvl == "warn" for lvl, _ in issues)
     assert "Base: 1 transparent key(s)" in text
 
@@ -227,16 +274,16 @@ def test_lint_flags_trap_and_dangling():
     km = ol.parse_keymap(make_keymap([base, filler(), trap, filler()]))
     ol.assign_layer_names(km, None)
     issues = ol.lint(km, ol.Labeller(km))
-    assert ("error", "L0: `MO(9)` points at layer 9, which does not exist") in issues
-    assert any("L2: entered with TG but has no TO/TG key to leave" in m for _, m in issues)
+    assert ("error", "Layer 0: `MO(9)` points at layer 9, which does not exist") in issues
+    assert any("Layer 2: entered with TG but has no TO/TG key to leave" in m for _, m in issues)
 
 
 def test_access_map(four_layers):
     geo = ol.Geometry.build(make_info(), four_layers)
     access = {a["name"]: a["how"] for a in ol.access_map(four_layers, ol.Labeller(four_layers), geo)}
-    assert access["Base"] == ["base layer", "switch key on L2 (L0.0)"]
-    assert access["L1"] == ["hold Space on Base (L3.4)"]
-    assert access["L3"] == ["hold Ctrl on Base (L3.5)"]
+    assert access["Base"] == ["base layer", "switch key on Layer 2 (L0.0)"]
+    assert access["Layer 1"] == ["hold Space on Base (L3.4)"]
+    assert access["Layer 3"] == ["hold Ctrl on Base (L3.5)"]
 
 
 def test_markdown_render(four_layers, tmp_path):
@@ -255,8 +302,8 @@ def test_diff_cli(tmp_path, capsys):
     new.write_text(make_keymap([changed, filler(), filler()]))
     ol.main(["diff", str(old), str(new), "--meta", "/nonexistent", "--info", "/nonexistent"])
     out = capsys.readouterr().out
-    assert "- **L0** L0.1: `W` → `P`" in out
-    assert "- **L2**: new layer" in out
+    assert "- **Layer 0** (L0.1): `W` → `P`" in out
+    assert "- **Layer 2**: new layer" in out
 
 
 def test_render_cli_text_only(tmp_path, capsys):
@@ -360,7 +407,7 @@ def test_lighting_status_follows_oryx_and_custom_config(four_layers):
     cycle = {e["key"]: e["cycle"] for e in light["effects"] if e["status"] == "on"}
     assert cycle["solid_color"] == 0 and cycle["cycle_all"] < cycle["typing_heatmap"]
     assert light["startup"]["speed"] == 60 and light["timeoutMs"] == 900000
-    assert light["oryxColours"] == ["L1"] and light["baseColoured"] is False
+    assert light["oryxColours"] == ["Layer 1"] and light["baseColoured"] is False
 
 
 def test_lighting_keys_and_markdown(four_layers):
@@ -370,12 +417,12 @@ def test_lighting_keys_and_markdown(four_layers):
     lab = ol.Labeller(four_layers)
     geo = ol.Geometry.build(make_info(), four_layers)
     light = ol.lighting_data(four_layers, lab, geo, lighting_info(), [])
-    assert light["toggleKeys"] == ["L1 L0.3"] and light["modeKeys"] == ["L1 L0.4"]
+    assert light["toggleKeys"] == ["L0.3 on Layer 1"] and light["modeKeys"] == ["L0.4 on Layer 1"]
     assert light["baseColoured"] is True
     keys = {k["kc"] for k in light["keys"]}
     assert {"KC_A", "KC_SPACE", "KC_DLR"} <= keys  # tap keycodes of MT/LT/dual-function keys
     md = "\n".join(ol.lighting_markdown(light))
-    assert "Toggle Layer Colors (L1 L0.3)" in md and "RGB Mode key: L1 L0.4" in md
+    assert "Toggle Layer Colors (L0.3 on Layer 1)" in md and "RGB Mode key: L0.4 on Layer 1" in md
 
 
 def test_effect_catalogue_matches_engine():

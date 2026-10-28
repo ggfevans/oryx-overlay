@@ -205,7 +205,7 @@
     const what = {
       trans: "Transparent: falls through to the layer below.",
       none: "No key.",
-      layer: k.hold ? "Tap for the legend, hold for the layer." : "Changes layer.",
+      layer: k.desc ? k.desc : k.hold ? "Tap for the legend, hold for the layer." : "Changes layer.",
       mod: k.hold ? "Tap for the legend, hold for the modifier." : "",
       special: "Oryx macro, tap dance or firmware function.",
     }[k.kind] || "";

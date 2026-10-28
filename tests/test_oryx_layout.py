@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 import sys
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
@@ -395,3 +397,28 @@ def test_transparent_key_over_toggle_is_an_exit():
     km = ol.parse_keymap(make_keymap([base_keys(), filler(), filler(), filler()]))
     ol.assign_layer_names(km, None)
     assert not [m for _, m in ol.lint(km, ol.Labeller(km)) if "no TO/TG key to leave" in m]
+
+
+@pytest.mark.skipif(shutil.which("keymap") is None, reason="keymap-drawer not installed")
+@pytest.mark.parametrize("name", ["-Nav", "--help", "Nav layer", "Sym 🔣"])
+def test_render_cli_option_like_layer_names(tmp_path, name):
+    km = tmp_path / "keymap.c"
+    km.write_text(make_keymap([base_keys(), filler()]), encoding="utf-8")
+    info = tmp_path / "info.json"
+    info.write_text(json.dumps(make_info()), encoding="utf-8")
+    meta = tmp_path / "meta.json"
+    meta.write_text(json.dumps({"layers": [
+        {"position": 0, "title": name}, {"position": 1, "title": "Other"},
+    ]}), encoding="utf-8")
+    out = tmp_path / "docs"
+
+    assert ol.main(["render", "--keymap", str(km), "--meta", str(meta),
+                    "--info", str(info), "--out", str(out)]) == 0
+    for filename in ("keymap.svg", "keymap-base.svg"):
+        svg = ET.parse(out / filename).getroot()
+        assert svg.tag == "{http://www.w3.org/2000/svg}svg"
+        labels = [node.text for node in svg.iter("{http://www.w3.org/2000/svg}text")
+                  if node.get("class") == "label"]
+        assert labels == ([name, "Other"] if filename == "keymap.svg" else [name])
+    assert (out / "index.html").is_file()
+    assert name in (out / "index.html").read_text(encoding="utf-8")

@@ -760,7 +760,7 @@ def run_drawer(yaml_path: Path, info_path: Path, geo_macro: str, css: str, foote
         json.dump(config, cfg, ensure_ascii=False)  # JSON is valid YAML
     cmd = [exe, "-c", cfg.name, "draw", str(yaml_path), "-j", str(info_path), "-l", geo_macro, "-o", str(out)]
     if select:
-        cmd[cmd.index("-o"):cmd.index("-o")] = ["-s", select]
+        cmd[cmd.index("-o"):cmd.index("-o")] = [f"--select-layers={select}"]
     env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
     res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", env=env)
     Path(cfg.name).unlink(missing_ok=True)

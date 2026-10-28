@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Layer names beginning with `-` (such as `-Nav`) no longer prevent SVG drawings and the HTML viewer from being generated. Layer selection is passed as an attached option value to keymap-drawer. (#18)
+
 - `KEYMAP_NAME` is validated (`A-Za-z0-9_-` only) in `load_config`, so `KEYMAP_NAME=x:dfu-util` can't turn `make build` into a flash and `../../..` can't make `rm -rf` escape the keymaps folder. `.claude/settings.json` also denies `make *:dfu*`, `*:teensy*`, `*:avrdude*` and `*:st-*`, the other flash targets in ZSA's fork. Covered by `tests/test_keymap_name.py`. (#10)
 - Workflow actions are pinned to commit SHAs (tag in a trailing comment), and `.github/dependabot.yml` opens one weekly PR to bump them, so a moved upstream tag can't change what CI runs. Both are template-owned, so `make self-update` ships them. Covered by `tests/test_workflow_pins.py`. (#2)
 - `.gitattributes` forces LF line endings (images stay binary), so a Windows clone with `core.autocrlf=true` no longer gets CRLF scripts that fail with `bash\r: No such file or directory`; `load_config` also ignores a CR in `oryx.conf`. `.gitattributes` is template-owned, so `make self-update` ships it. An existing CRLF clone needs the one-off re-checkout in README Troubleshooting. Covered by `tests/test_line_endings.py`. (#8)

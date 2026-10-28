@@ -223,7 +223,7 @@ def parse_keymap(text: str) -> Keymap:
 
 
 def assign_layer_names(km: Keymap, meta: dict | None) -> None:
-    """Name layers from Oryx metadata; fall back to L0, L1, ... Names are unique."""
+    """Name layers from Oryx metadata; fall back to "Layer 0", "Layer 1", ... Names are unique."""
     titles = {}
     for entry in (meta or {}).get("layers", []) or []:
         title = (entry.get("title") or "").strip()
@@ -231,7 +231,7 @@ def assign_layer_names(km: Keymap, meta: dict | None) -> None:
             titles[int(entry.get("position", -1))] = title
     seen: set[str] = set()
     for layer in km.layers:
-        name = titles.get(layer.index) or (layer.ident if not layer.ident.isdigit() else f"L{layer.index}")
+        name = titles.get(layer.index) or (layer.ident if not layer.ident.isdigit() else f"Layer {layer.index}")
         if name in seen:
             name = f"{name} {layer.index}"
         seen.add(name)
@@ -311,29 +311,50 @@ class Legend:
     tap: str = ""
     hold: str = ""
     kind: str = ""  # "", trans, none, layer, mod, special
+    # Layer keys that are not tap-hold (TG, TO, OSL, DF, TT, MO): `func` is the QMK
+    # function, `note` a short drawn label, `desc` the sentence the viewer shows.
+    func: str = ""
+    note: str = ""
+    desc: str = ""
 
-    def text(self) -> str:
+    def text(self, width: int = 0) -> str:
+        """Legend text. With `width`, a layer key too long for it loses the start of
+        its layer name, not the end, so the number or identity survives."""
         if self.kind == "trans":
             return "▽"
         if self.kind == "none":
             return "·"
-        return f"{self.tap}/{self.hold}" if self.hold else self.tap
+        if self.hold:
+            return f"{self.tap}/{self.hold}"
+        if not self.note:
+            return self.tap
+        room = width - len(self.func) - 1
+        tap = self.tap if not width or len(self.tap) <= room else "…" + self.tap[len(self.tap) - room + 1 :]
+        return f"{self.func} {tap}"
 
 
-LAYER_FUNCS = {"MO": "", "TG": "toggle", "TO": "go to", "TT": "tap-toggle", "OSL": "one-shot", "DF": "default"}
+# fn -> (drawn note, description template). Only LT and mod-taps are true tap-hold keys.
+LAYER_FUNCS = {
+    "MO": ("", "Hold for {0}."),
+    "TG": ("toggle", "Toggles {0} on/off."),
+    "TO": ("go to", "Switches to {0}."),
+    "TT": ("tap-toggle", "Hold for {0}; tap it several times to toggle it on/off."),
+    "OSL": ("one-shot", "Next key only on {0}."),
+    "DF": ("default", "Sets {0} as the default layer."),
+}
 
 
 class Labeller:
     def __init__(self, km: Keymap, style: str = "pc"):
         self.km = km
         self.mods = MOD_TEXT[style]
-        self.names = {l.index: l.name or f"L{l.index}" for l in km.layers}
+        self.names = {l.index: l.name or f"Layer {l.index}" for l in km.layers}
 
     def layer(self, arg: str) -> str:
         idx = self.km.layer_index(arg)
         if idx is None:
             return self.km.resolve(arg.strip())
-        return self.names.get(idx, f"L{idx}")
+        return self.names.get(idx, f"Layer {idx}")
 
     def modset(self, expr: str) -> set[str]:
         out: set[str] = set()
@@ -388,7 +409,9 @@ class Labeller:
             return Legend(self.basic(kc))
         fn, args = c
         if fn in LAYER_FUNCS and len(args) == 1:
-            return Legend(self.layer(args[0]), LAYER_FUNCS[fn], "layer")
+            name = self.layer(args[0])
+            note, desc = LAYER_FUNCS[fn]
+            return Legend(name, "", "layer", fn, note, desc.format(name))
         if fn == "LT" and len(args) == 2:
             return Legend(self.legend(args[1]).text(), self.layer(args[0]), "layer")
         if fn == "MT" and len(args) == 2:
@@ -396,7 +419,8 @@ class Labeller:
         if fn.endswith("_T") and len(args) == 1:
             return Legend(self.legend(args[0]).text(), self.modtext(self.modset(fn[:-2])), "mod")
         if fn == "OSM" and len(args) == 1:
-            return Legend(self.modtext(self.modset(args[0])), "one-shot", "mod")
+            mods = self.modtext(self.modset(args[0]))
+            return Legend(mods, "", "mod", "OSM", "one-shot", f"Next key only with {mods}.")
         if fn == "TD":
             n = re.sub(r"\D", "", args[0]) if args else ""
             return Legend(f"Dance {n}".strip(), "", "special")
@@ -579,7 +603,12 @@ def lint(km: Keymap, lab: Labeller) -> list[tuple[str, str]]:
 # Output: markdown view
 # --------------------------------------------------------------------------
 
-CELL = 9
+CELL = 11
+
+
+def _index_suffix(name: str, index: int) -> str:
+    """" (layer N)", unless the name already says so ("Layer N")."""
+    return "" if name == f"Layer {index}" else f" (layer {index})"
 
 
 def _cell(text: str) -> str:
@@ -588,7 +617,7 @@ def _cell(text: str) -> str:
 
 
 def grid_text(layer: Layer, lab: Labeller, geo: Geometry) -> str:
-    legends = [lab.legend(k).text() for k in layer.keys]
+    legends = [lab.legend(k).text(CELL) for k in layer.keys]
     lines = []
     for row in geo.grid:
         left = "".join(f"[{_cell(legends[i])}]" if i is not None else " " * (CELL + 2) for i in row[: geo.split_col])
@@ -655,7 +684,7 @@ def render_markdown(km: Keymap, lab: Labeller, geo: Geometry, meta: dict, svg_na
     out += ["## Layer access", ""]
     for entry in access_map(km, lab, geo):
         how = "; ".join(entry["how"]) or "not reachable from any key"
-        out.append(f"- **{entry['name']}** (layer {entry['index']}): {how}")
+        out.append(f"- **{entry['name']}**{_index_suffix(entry['name'], entry['index'])}: {how}")
     out.append("")
 
     out += lighting_markdown(light)
@@ -665,11 +694,11 @@ def render_markdown(km: Keymap, lab: Labeller, geo: Geometry, meta: dict, svg_na
         out += ["## Checks", ""] + [f"- {'❌' if lvl == 'error' else '⚠️'} {msg}" for lvl, msg in issues] + [""]
 
     for layer in km.layers:
-        out += [f"## {layer.name} (layer {layer.index})", "", "```text", grid_text(layer, lab, geo), "```", ""]
+        out += [f"## {layer.name}{_index_suffix(layer.name, layer.index)}", "", "```text", grid_text(layer, lab, geo), "```", ""]
         special = []
         for ki, raw in enumerate(layer.keys):
             lg = lab.legend(raw)
-            if lg.hold or lg.kind == "special" or raw in km.dual_funcs:
+            if lg.hold or lg.note or lg.kind == "special" or raw in km.dual_funcs:
                 where = geo.pos.get(ki, f"#{ki}")
                 special.append(f"| {where} | {lg.text()} | `{raw}` |")
         if special:
@@ -722,8 +751,8 @@ def drawer_yaml(km: Keymap, lab: Labeller, geo: Geometry, colours: dict[int, dic
                 classes.append(f"led-{hx}")
                 used.add(hx)
             entry = {"t": "▽" if lg.kind == "trans" else ("" if lg.kind == "none" else lg.tap)}
-            if lg.hold:
-                entry["h"] = lg.hold
+            if lg.hold or lg.note:
+                entry["h"] = lg.hold or lg.note
             if classes:
                 entry["type"] = " ".join(classes)
             lines.append(f"  - {json.dumps(entry, ensure_ascii=False)}")
@@ -886,7 +915,7 @@ def lighting_data(km: Keymap, lab: Labeller, geo: Geometry, info: dict, configs:
             "kc": tap_keycode(km, raw) if raw else "",
         })
     def find_keys(codes: tuple[str, ...]) -> list[str]:
-        return [f"{layer.name} {geo.pos.get(ki, f'#{ki}')}"
+        return [f"{geo.pos.get(ki, f'#{ki}')} on {layer.name}"
                 for layer in km.layers for ki, raw in enumerate(layer.keys) if km.resolve(raw) in codes]
 
     mode_keys = find_keys(("RGB_MOD", "RGB_MODE_FORWARD", "RM_NEXT", "QK_RGB_MATRIX_MODE_NEXT"))
@@ -968,7 +997,7 @@ def render_viewer(km: Keymap, lab: Labeller, geo: Geometry, meta: dict, colours:
             if raw in km.dual_funcs:
                 tap, hold = km.dual_funcs[raw]
                 resolved = f"tap {tap}, hold {hold}" if hold else f"tap {tap}"
-            keys.append({"pos": geo.pos.get(ki, f"#{ki}"), "raw": raw, "resolved": resolved, "tap": lg.tap, "hold": lg.hold, "kind": lg.kind})
+            keys.append({"pos": geo.pos.get(ki, f"#{ki}"), "raw": raw, "resolved": resolved, "tap": lg.tap, "hold": lg.hold, "desc": lg.desc, "kind": lg.kind})
         layers.append({"name": layer.name, "index": layer.index, "colour": dominant_colour(colours.get(layer.index, {})), "svg": svg, "keys": keys})
     data = {
         "title": meta.get("title") or "Keymap",
@@ -1058,7 +1087,7 @@ def cmd_diff(args) -> int:
             la, lb = lo.legend(a).text(), ln.legend(b).text()
             if a != b or la != lb:
                 where = geo.pos.get(ki, f"#{ki}")
-                lines.append(f"- **{layer.name}** {where}: `{la}` → `{lb}`" + (f"  (`{a}` → `{b}`)" if args.raw else ""))
+                lines.append(f"- **{layer.name}** ({where}): `{la}` → `{lb}`" + (f"  (`{a}` → `{b}`)" if args.raw else ""))
     for layer in olds.values():
         lines.append(f"- **{layer.name}**: layer removed")
     if old.ledmap != new.ledmap:

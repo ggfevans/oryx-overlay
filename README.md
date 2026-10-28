@@ -15,7 +15,7 @@ A template repo for Moonlander, Voyager, ErgoDox EZ and Planck EZ owners who lik
 - **Pinned actions.** Workflow actions are pinned to commit SHAs, and the template's `.github/dependabot.yml` (which repos made from it inherit) opens one weekly PR to bump them.
 - **A keymap you can see.** Every build redraws `docs/keymap.svg` with [keymap-drawer](https://github.com/caksoylar/keymap-drawer), using your Oryx layer names and LED colours, plus `docs/index.html`, an interactive viewer you can publish with GitHub Pages.
 - **A lighting effect picker.** Every RGB effect your board supports plays on your own layout, using a JavaScript port of QMK's effect code that CI checks byte for byte against the real firmware. It shows which effects your firmware actually includes, where your RGB Mode key is, and how to switch the rest on.
-- **Readable history.** Oryx syncs are commits with key-level changelogs (`Base R1.3: W → F`), and `make diff` shows the same for any range.
+- **Readable history.** Oryx syncs are commits with key-level changelogs (``**Base** (R1.3): `W` → `F` ``), and `make diff` shows the same for any range.
 - **Layout checks.** Unreachable layers, layer keys pointing nowhere, and layers you can enter but never leave are flagged on every build.
 - **Claude Code ready.** `CLAUDE.md` explains the repo's rules, three skills cover syncing, adding features and reviewing the layout, and project permissions block flashing and edits to generated files.
 

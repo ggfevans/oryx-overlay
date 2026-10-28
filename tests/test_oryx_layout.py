@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 import sys
 import zipfile
 from pathlib import Path
@@ -403,3 +404,20 @@ def test_embed_json_is_inert_in_script_block(name):
     blob = ol.embed_json(data)
     assert not any(c in blob for c in "<>&\u2028\u2029")
     assert json.loads(blob) == data
+
+
+@pytest.mark.skipif(shutil.which("keymap") is None, reason="keymap-drawer not installed")
+def test_render_draws_layer_named_with_leading_dash(tmp_path):
+    # Issue #18: "-s -Nav" made argparse read the name as a flag, so no drawing was written.
+    km = tmp_path / "keymap.c"
+    km.write_text(make_keymap([base_keys(), filler()]))
+    info = tmp_path / "info.json"
+    info.write_text(json.dumps(make_info()))
+    meta = tmp_path / "oryx.json"
+    meta.write_text(json.dumps({"layers": [{"position": 0, "title": "Base"}, {"position": 1, "title": "-Nav"}]}))
+    out = tmp_path / "docs"
+    args = ["render", "--keymap", str(km), "--meta", str(meta), "--info", str(info), "--out", str(out)]
+    assert ol.main(args) == 0
+    for name in ("keymap.svg", "keymap-base.svg", "index.html"):
+        assert (out / name).exists()
+    assert "-Nav" in (out / "index.html").read_text(encoding="utf-8")

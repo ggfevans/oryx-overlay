@@ -177,7 +177,8 @@ def test_dual_function_keys(four_layers):
         ("pc", "OSL(2)", "OSL Layer 2"),
         ("pc", "DF(2)", "DF Layer 2"),
         ("pc", "MO(2)", "Layer 2"),
-        ("mac", "OSM(MOD_LSFT)", "⇧/one-shot"),
+        ("pc", "TT(2)", "TT Layer 2"),
+        ("mac", "OSM(MOD_LSFT)", "OSM ⇧"),
         ("pc", "KC_TRANSPARENT", "▽"),
         ("pc", "KC_NO", "·"),
         ("mac", "DUAL_FUNC_0", "$/⌘"),
@@ -199,6 +200,7 @@ def test_legends(four_layers, style, raw, text):
         ("TO(2)", "Switches to Layer 2."),
         ("OSL(2)", "Next key only on Layer 2."),
         ("DF(2)", "Sets Layer 2 as the default layer."),
+        ("TT(2)", "Hold for Layer 2; tap it several times to toggle it on/off."),
     ],
 )
 def test_layer_keys_are_not_tap_hold(four_layers, raw, desc):
@@ -320,6 +322,35 @@ def test_viewer_escapes_script_close(four_layers):
     four_layers.layers[0].name = "</script><b>"
     html = ol.render_viewer(four_layers, ol.Labeller(four_layers), geo, {"title": "x"}, {}, ["<svg/>"] * 4)
     assert html.count("</script>") == 3  # only the page's own closing tags (data, engine, app)
+
+
+def test_viewer_key_json_carries_desc(four_layers):
+    geo = ol.Geometry.build(make_info(), four_layers)
+    html = ol.render_viewer(four_layers, ol.Labeller(four_layers), geo, {"title": "x"}, {}, ["<svg/>"] * 4)
+    assert '"desc": "Toggles Layer 2 on/off."' in html
+    assert '"desc": "Next key only with Shift."' in html
+
+
+def test_osm_is_not_tap_hold(four_layers):
+    lg = ol.Labeller(four_layers).legend("OSM(MOD_LSFT)")
+    assert lg.hold == "" and lg.desc == "Next key only with Shift."
+
+
+def test_long_layer_key_legend_keeps_layer_number(four_layers):
+    four_layers.layers[1].name = "Layer 10"
+    four_layers.layers[2].name = "Navigation"
+    lab = ol.Labeller(four_layers)
+    assert lab.legend("OSL(1)").text(11) == "OSL …yer 10"
+    assert lab.legend("TG(2)").text(11) == "TG …igation"
+    assert len(lab.legend("TG(2)").text(11)) <= 11
+    assert lab.legend("TG(2)").text() == "TG Navigation"
+
+
+def test_default_layer_heading_has_no_redundant_index(four_layers):
+    geo = ol.Geometry.build(make_info(), four_layers)
+    four_layers.layers[1].name = "Layer 1"
+    md = ol.render_markdown(four_layers, ol.Labeller(four_layers), geo, {}, None)
+    assert "## Layer 1\n" in md and "## Base (layer 0)" in md and "(layer 1)" not in md
 
 
 def test_extract_source(tmp_path):

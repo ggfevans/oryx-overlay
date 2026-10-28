@@ -317,14 +317,20 @@ class Legend:
     note: str = ""
     desc: str = ""
 
-    def text(self) -> str:
+    def text(self, width: int = 0) -> str:
+        """Legend text. With `width`, a layer key too long for it loses the start of
+        its layer name, not the end, so the number or identity survives."""
         if self.kind == "trans":
             return "▽"
         if self.kind == "none":
             return "·"
         if self.hold:
             return f"{self.tap}/{self.hold}"
-        return f"{self.func} {self.tap}" if self.note else self.tap
+        if not self.note:
+            return self.tap
+        room = width - len(self.func) - 1
+        tap = self.tap if not width or len(self.tap) <= room else "…" + self.tap[len(self.tap) - room + 1 :]
+        return f"{self.func} {tap}"
 
 
 # fn -> (drawn note, description template). Only LT and mod-taps are true tap-hold keys.
@@ -413,7 +419,8 @@ class Labeller:
         if fn.endswith("_T") and len(args) == 1:
             return Legend(self.legend(args[0]).text(), self.modtext(self.modset(fn[:-2])), "mod")
         if fn == "OSM" and len(args) == 1:
-            return Legend(self.modtext(self.modset(args[0])), "one-shot", "mod")
+            mods = self.modtext(self.modset(args[0]))
+            return Legend(mods, "", "mod", "OSM", "one-shot", f"Next key only with {mods}.")
         if fn == "TD":
             n = re.sub(r"\D", "", args[0]) if args else ""
             return Legend(f"Dance {n}".strip(), "", "special")
@@ -599,13 +606,18 @@ def lint(km: Keymap, lab: Labeller) -> list[tuple[str, str]]:
 CELL = 11
 
 
+def _index_suffix(name: str, index: int) -> str:
+    """" (layer N)", unless the name already says so ("Layer N")."""
+    return "" if name == f"Layer {index}" else f" (layer {index})"
+
+
 def _cell(text: str) -> str:
     text = text if len(text) <= CELL else text[: CELL - 1] + "…"
     return text.center(CELL)
 
 
 def grid_text(layer: Layer, lab: Labeller, geo: Geometry) -> str:
-    legends = [lab.legend(k).text() for k in layer.keys]
+    legends = [lab.legend(k).text(CELL) for k in layer.keys]
     lines = []
     for row in geo.grid:
         left = "".join(f"[{_cell(legends[i])}]" if i is not None else " " * (CELL + 2) for i in row[: geo.split_col])
@@ -672,7 +684,7 @@ def render_markdown(km: Keymap, lab: Labeller, geo: Geometry, meta: dict, svg_na
     out += ["## Layer access", ""]
     for entry in access_map(km, lab, geo):
         how = "; ".join(entry["how"]) or "not reachable from any key"
-        out.append(f"- **{entry['name']}** (layer {entry['index']}): {how}")
+        out.append(f"- **{entry['name']}**{_index_suffix(entry['name'], entry['index'])}: {how}")
     out.append("")
 
     out += lighting_markdown(light)
@@ -682,7 +694,7 @@ def render_markdown(km: Keymap, lab: Labeller, geo: Geometry, meta: dict, svg_na
         out += ["## Checks", ""] + [f"- {'❌' if lvl == 'error' else '⚠️'} {msg}" for lvl, msg in issues] + [""]
 
     for layer in km.layers:
-        out += [f"## {layer.name} (layer {layer.index})", "", "```text", grid_text(layer, lab, geo), "```", ""]
+        out += [f"## {layer.name}{_index_suffix(layer.name, layer.index)}", "", "```text", grid_text(layer, lab, geo), "```", ""]
         special = []
         for ki, raw in enumerate(layer.keys):
             lg = lab.legend(raw)

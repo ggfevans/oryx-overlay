@@ -206,7 +206,7 @@
       trans: "Transparent: falls through to the layer below.",
       none: "No key.",
       layer: k.desc ? k.desc : k.hold ? "Tap for the legend, hold for the layer." : "Changes layer.",
-      mod: k.hold ? "Tap for the legend, hold for the modifier." : "",
+      mod: k.desc ? k.desc : k.hold ? "Tap for the legend, hold for the modifier." : "",
       special: "Oryx macro, tap dance or firmware function.",
     }[k.kind] || "";
     return `<div class="legend">${esc(legend) || "&nbsp;"}</div>` +

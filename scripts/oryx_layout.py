@@ -326,11 +326,11 @@ class Legend:
             return "·"
         if self.hold:
             return f"{self.tap}/{self.hold}"
-        if not self.note:
+        if not self.func:
             return self.tap
-        room = width - len(self.func) - 1
+        room = width - (len(self.func) + 1 if self.note else 0)
         tap = self.tap if not width or len(self.tap) <= room else "…" + self.tap[len(self.tap) - room + 1 :]
-        return f"{self.func} {tap}"
+        return f"{self.func} {tap}" if self.note else tap
 
 
 # fn -> (drawn note, description template). Only LT and mod-taps are true tap-hold keys.

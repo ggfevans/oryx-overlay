@@ -346,6 +346,18 @@ def test_long_layer_key_legend_keeps_layer_number(four_layers):
     assert lab.legend("TG(2)").text() == "TG Navigation"
 
 
+def test_long_mo_legend_keeps_layer_number(four_layers):
+    four_layers.layers[2].name = "Navigation Layer 2"
+    lg = ol.Labeller(four_layers).legend("MO(2)")
+    assert lg.text(11) == "…on Layer 2"
+    assert len(lg.text(11)) == 11 and lg.text() == "Navigation Layer 2"
+
+
+def test_viewer_mod_branch_prefers_desc():
+    html = (Path(ol.__file__).parent / "viewer.html").read_text(encoding="utf-8")
+    assert "mod: k.desc ? k.desc : k.hold" in html
+
+
 def test_default_layer_heading_has_no_redundant_index(four_layers):
     geo = ol.Geometry.build(make_info(), four_layers)
     four_layers.layers[1].name = "Layer 1"

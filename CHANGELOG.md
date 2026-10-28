@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The viewer's embedded JSON escapes `<`, `>`, `&`, U+2028 and U+2029 as `\uXXXX` (was only `</`), so a layer name like `<!--<script` can't blank the viewer by pushing the HTML parser into its double-escaped script state. Covered by `tests/test_oryx_layout.py`. (#11)
 - `make docker-<target>` forwards the settings `load_config` lets the environment override (`KEYBOARD`, `ORYX_LAYOUT_ID`, `KEYMAP_NAME`, `LEGEND_STYLE`, `ORYX_GEOMETRY`, `QMK_BRANCH`) when set, read from `CONFIG_KEYS` in `scripts/lib.sh` so the lists can't drift, so `KEYBOARD=moonlander/revb make docker-build` no longer silently builds rev A. It also passes the host's git identity (`GIT_AUTHOR_*`/`GIT_COMMITTER_*`, from `git config`, environment wins), so `make docker-sync` can commit to the `oryx` branch. Covered by `tests/test_docker_env.py`. (#9)
 - `KEYMAP_NAME` is validated (`A-Za-z0-9_-` only) in `load_config`, so `KEYMAP_NAME=x:dfu-util` can't turn `make build` into a flash and `../../..` can't make `rm -rf` escape the keymaps folder. `.claude/settings.json` also denies `make *:dfu*`, `*:teensy*`, `*:avrdude*` and `*:st-*`, the other flash targets in ZSA's fork. Covered by `tests/test_keymap_name.py`. (#10)
 - Workflow actions are pinned to commit SHAs (tag in a trailing comment), and `.github/dependabot.yml` opens one weekly PR to bump them, so a moved upstream tag can't change what CI runs. Both are template-owned, so `make self-update` ships them. Covered by `tests/test_workflow_pins.py`. (#2)

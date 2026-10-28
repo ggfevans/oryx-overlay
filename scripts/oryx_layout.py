@@ -939,6 +939,16 @@ def dominant_colour(colours: dict[int, str]) -> str | None:
     return "#" + max(counts, key=counts.get)
 
 
+def embed_json(data) -> str:
+    """JSON safe inside <script type="application/json">. Layer names are remote data, so `<!--<script`
+    would otherwise switch the HTML parser to its double-escaped state and swallow the scripts after it.
+    The \\u escapes keep it valid JSON that JSON.parse decodes back identically."""
+    out = json.dumps(data, ensure_ascii=False)
+    for ch in "<>&\u2028\u2029":
+        out = out.replace(ch, f"\\u{ord(ch):04x}")
+    return out
+
+
 def render_viewer(km: Keymap, lab: Labeller, geo: Geometry, meta: dict, colours: dict[int, dict[int, str]], svgs: list[str], light: dict | None = None) -> str:
     template = (Path(__file__).parent / "viewer.html").read_text(encoding="utf-8")
     chips = [("board", meta.get("geometry") or km.layout_macro.removeprefix("LAYOUT_") or "?")]
@@ -966,7 +976,7 @@ def render_viewer(km: Keymap, lab: Labeller, geo: Geometry, meta: dict, colours:
         "checks": lint(km, lab),
         "lighting": light,
     }
-    blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    blob = embed_json(data)
     title = (meta.get("title") or "Keymap").replace("&", "&amp;").replace("<", "&lt;")
     engine = EFFECTS_JS.read_text(encoding="utf-8").replace("</", "<\\/") if light else ""
     return template.replace("__TITLE__", title).replace("/*__RGB_ENGINE__*/", engine).replace("__DATA__", blob)

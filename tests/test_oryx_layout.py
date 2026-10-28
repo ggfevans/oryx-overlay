@@ -395,3 +395,11 @@ def test_transparent_key_over_toggle_is_an_exit():
     km = ol.parse_keymap(make_keymap([base_keys(), filler(), filler(), filler()]))
     ol.assign_layer_names(km, None)
     assert not [m for _, m in ol.lint(km, ol.Labeller(km)) if "no TO/TG key to leave" in m]
+
+
+@pytest.mark.parametrize("name", ["<!--<script", "</script>", "a&b", "x y<>"])
+def test_embed_json_is_inert_in_script_block(name):
+    data = {"layers": [{"name": name, "keys": ["</script>"]}]}
+    blob = ol.embed_json(data)
+    assert not any(c in blob for c in "<>&  ")
+    assert json.loads(blob) == data

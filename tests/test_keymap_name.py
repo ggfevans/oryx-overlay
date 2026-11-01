@@ -95,7 +95,7 @@ def test_settings_deny_every_flash_target(target):
 def qmk_tree():
     """The tree for the layout's firmware version, resolved as scripts/lib.sh does (CACHE_DIR, XDG)."""
     env = dict(ENV, HOME=str(Path.home()))
-    env.update({k: os.environ[k] for k in ("CACHE_DIR", "XDG_CACHE_HOME") if k in os.environ})  # where lib.sh looks
+    env.update({k: os.environ[k] for k in ("CACHE_DIR", "XDG_CACHE_HOME", "QMK_BRANCH") if k in os.environ})  # where lib.sh looks
     r = subprocess.run(["bash", "-c", 'source "$1/scripts/lib.sh" && load_config && printf %s "$(qmk_dir)"', "_", str(ROOT)],
                        capture_output=True, text=True, env=env)
     return Path(r.stdout) if r.returncode == 0 and r.stdout else None

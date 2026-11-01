@@ -139,3 +139,16 @@ def test_role_specific_config_wins_over_user(tmp_path):
                        text=True, env=host_env(tmp_path, cfg={"author.email": "author@example.com"}))
     assert r.returncode == 0, r.stderr
     assert "author@example.com|ada@example.com" in r.stdout
+
+
+def test_empty_role_values_fall_back_to_user(tmp_path):
+    """git treats an empty author.*/committer.* as unset and uses user.*; so must the Makefile."""
+    fake = tmp_path / "docker"
+    fake.write_text('#!/bin/sh\n[ "$1" = run ] && printf "%s|%s|%s|%s" "$GIT_AUTHOR_NAME" '
+                    '"$GIT_COMMITTER_NAME" "$GIT_AUTHOR_EMAIL" "$GIT_COMMITTER_EMAIL"\nexit 0\n')
+    fake.chmod(0o755)
+    empty = {k: "" for k in ("author.name", "author.email", "committer.name", "committer.email")}
+    r = subprocess.run(["make", f"DOCKER={fake}", "docker-build"], cwd=sandbox(tmp_path), capture_output=True,
+                       text=True, env=host_env(tmp_path, cfg=empty))
+    assert r.returncode == 0, r.stderr
+    assert "Ada O'Neil|Ada O'Neil|ada@example.com|ada@example.com" in r.stdout

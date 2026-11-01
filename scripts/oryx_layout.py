@@ -306,7 +306,7 @@ KEYPAD = {
 }
 
 
-def _trim_front(text: str, room: int) -> str:
+def _trim(text: str, room: int) -> str:
     """Fit `text` into `room` characters: keep its start, and a trailing number if
     it has one ("Layer 10" -> "Laye…10", "Navigation" -> "Navig…")."""
     if len(text) <= room or room < 2:
@@ -329,8 +329,8 @@ class Legend:
     desc: str = ""
 
     def text(self, width: int = 0) -> str:
-        """Legend text. With `width`, a layer key too long for it loses the start of
-        its layer name, not the end, so the number or identity survives."""
+        """Legend text. With `width`, a legend too long for it is shortened by
+        keeping the start of the layer name plus any trailing number."""
         if self.kind == "trans":
             return "▽"
         if self.kind == "none":
@@ -338,16 +338,16 @@ class Legend:
         if self.hold:
             tap, hold = self.tap, self.hold
             if width and len(tap) + 1 + len(hold) > width:
-                # Keep the tap label and trim the front of the hold label, but leave the
-                # hold at least 5 characters so a layer number survives a long tap label.
+                # Keep the tap label and shorten the hold label (start of the name plus any
+                # trailing number), leaving the hold at least 5 characters.
                 hold_room = max(width - len(tap) - 1, min(len(hold), 5))
-                hold = _trim_front(hold, hold_room)
+                hold = _trim(hold, hold_room)
                 tap = tap if len(tap) + 1 + len(hold) <= width else tap[: max(width - len(hold) - 2, 1)] + "…"
             return f"{tap}/{hold}"
         if not self.func:
             return self.tap
         room = width - (len(self.func) + 1 if self.note else 0)
-        tap = self.tap if not width else _trim_front(self.tap, room)
+        tap = self.tap if not width else _trim(self.tap, room)
         return f"{self.func} {tap}" if self.note else tap
 
 

@@ -146,8 +146,8 @@ rect.key.trans { opacity: 0.55; }
 text.trans { opacity: 0.45; }
 rect.key.layer { stroke: #6d5dfc; stroke-width: 2; }
 </style>
-<g transform="translate(30, 0)" class="layer-L0">
-<text x="0" y="28" class="label" id="L0">L0</text>
+<g transform="translate(30, 0)" class="layer-Layer 0">
+<text x="0" y="28" class="label" id="Layer-0">Layer 0</text>
 <g transform="translate(0, 56)">
 <g transform="translate(29, 51)" class="key keypos-0">
 <rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
@@ -231,14 +231,18 @@ rect.key.layer { stroke: #6d5dfc; stroke-width: 2; }
 </g>
 <g transform="translate(377, 102)" class="key layer keypos-20">
 <rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key layer"/>
-<a href="#L1">
-<text x="0" y="0" class="key layer tap layer-activator">L1</text>
+<a href="#Layer-1">
+<text x="0" y="0" class="key layer tap layer-activator">
+<tspan x="0" dy="-0.9em">Layer</tspan><tspan x="0" dy="1.2em">1</tspan>
+</text>
 </a><text x="0" y="25" class="key layer hold">toggle</text>
 </g>
 <g transform="translate(609, 102)" class="key layer keypos-21">
 <rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key layer"/>
-<a href="#L1">
-<text x="0" y="0" class="key layer tap layer-activator">L1</text>
+<a href="#Layer-1">
+<text x="0" y="0" class="key layer tap layer-activator">
+<tspan x="0" dy="-0.9em">Layer</tspan><tspan x="0" dy="1.2em">1</tspan>
+</text>
 </a><text x="0" y="25" class="key layer hold">toggle</text>
 </g>
 <g transform="translate(667, 102)" class="key keypos-22">
@@ -316,8 +320,8 @@ rect.key.layer { stroke: #6d5dfc; stroke-width: 2; }
 <g transform="translate(899, 167)" class="key layer keypos-40">
 <rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key layer"/>
 <text x="0" y="0" class="key layer tap">;</text>
-<a href="#L2">
-<text x="0" y="25" class="key layer hold layer-activator">L2</text>
+<a href="#Layer-2">
+<text x="0" y="25" class="key layer hold layer-activator">Layer 2</text>
 </a></g>
 <g transform="translate(957, 167)" class="key mod keypos-41">
 <rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key mod"/>
@@ -376,8 +380,8 @@ rect.key.layer { stroke: #6d5dfc; stroke-width: 2; }
 <g transform="translate(29, 283)" class="key layer keypos-54">
 <rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key layer"/>
 <text x="0" y="0" class="key layer tap">`</text>
-<a href="#L1">
-<text x="0" y="25" class="key layer hold layer-activator">L1</text>
+<a href="#Layer-1">
+<text x="0" y="25" class="key layer hold layer-activator">Layer 1</text>
 </a></g>
 <g transform="translate(87, 283)" class="key keypos-55">
 <rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
@@ -426,8 +430,10 @@ rect.key.layer { stroke: #6d5dfc; stroke-width: 2; }
 </g>
 <g transform="translate(957, 283)" class="key layer keypos-65">
 <rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key layer"/>
-<a href="#L1">
-<text x="0" y="0" class="key layer tap layer-activator">L1</text>
+<a href="#Layer-1">
+<text x="0" y="0" class="key layer tap layer-activator">
+<tspan x="0" dy="-0.6em">Layer</tspan><tspan x="0" dy="1.2em">1</tspan>
+</text>
 </a></g>
 <g transform="translate(319, 362)" class="key keypos-66">
 <rect rx="7" ry="7" x="-27" y="-42" width="54" height="83" class="key"/>
@@ -455,8 +461,8 @@ rect.key.layer { stroke: #6d5dfc; stroke-width: 2; }
 </g>
 </g>
 </g>
-<g transform="translate(1076, 0)" class="layer-L1">
-<text x="0" y="28" class="label" id="L1">L1</text>
+<g transform="translate(1076, 0)" class="layer-Layer 1">
+<text x="0" y="28" class="label" id="Layer-1">Layer 1</text>
 <g transform="translate(0, 56)">
 <g transform="translate(29, 51)" class="key keypos-0">
 <rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>
@@ -758,8 +764,8 @@ rect.key.layer { stroke: #6d5dfc; stroke-width: 2; }
 </g>
 </g>
 </g>
-<g transform="translate(30, 462)" class="layer-L2">
-<text x="0" y="28" class="label" id="L2">L2</text>
+<g transform="translate(30, 462)" class="layer-Layer 2">
+<text x="0" y="28" class="label" id="Layer-2">Layer 2</text>
 <g transform="translate(0, 56)">
 <g transform="translate(29, 51)" class="key keypos-0">
 <rect rx="7" ry="7" x="-27" y="-27" width="54" height="54" class="key"/>

@@ -1,5 +1,5 @@
 layers:
-  "L0":
+  "Layer 0":
   - {"t": "="}
   - {"t": "1"}
   - {"t": "2"}
@@ -20,8 +20,8 @@ layers:
   - {"t": "E"}
   - {"t": "R"}
   - {"t": "T"}
-  - {"t": "L1", "h": "toggle", "type": "layer"}
-  - {"t": "L1", "h": "toggle", "type": "layer"}
+  - {"t": "Layer 1", "h": "toggle", "type": "layer"}
+  - {"t": "Layer 1", "h": "toggle", "type": "layer"}
   - {"t": "Y"}
   - {"t": "U"}
   - {"t": "I"}
@@ -40,7 +40,7 @@ layers:
   - {"t": "J"}
   - {"t": "K"}
   - {"t": "L"}
-  - {"t": ";", "h": "L2", "type": "layer"}
+  - {"t": ";", "h": "Layer 2", "type": "layer"}
   - {"t": "'", "h": "Super", "type": "mod"}
   - {"t": "Shift"}
   - {"t": "Z", "h": "Ctrl", "type": "mod"}
@@ -54,7 +54,7 @@ layers:
   - {"t": "."}
   - {"t": "/"}
   - {"t": "Shift"}
-  - {"t": "`", "h": "L1", "type": "layer"}
+  - {"t": "`", "h": "Layer 1", "type": "layer"}
   - {"t": "Caps Word"}
   - {"t": "▽", "type": "trans"}
   - {"t": "←"}
@@ -65,14 +65,14 @@ layers:
   - {"t": "↓"}
   - {"t": "["}
   - {"t": "]", "h": "Ctrl", "type": "mod"}
-  - {"t": "L1", "type": "layer"}
+  - {"t": "Layer 1", "type": "layer"}
   - {"t": "Space"}
   - {"t": "⌫"}
   - {"t": "Super"}
   - {"t": "Alt"}
   - {"t": "Tab"}
   - {"t": "Enter"}
-  "L1":
+  "Layer 1":
   - {"t": "Esc"}
   - {"t": "F1"}
   - {"t": "F2"}
@@ -145,7 +145,7 @@ layers:
   - {"t": "RGB Solid"}
   - {"t": "Hue−"}
   - {"t": "Hue+"}
-  "L2":
+  "Layer 2":
   - {"t": "Audio"}
   - {"t": "▽", "type": "trans"}
   - {"t": "▽", "type": "trans"}

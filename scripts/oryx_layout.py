@@ -307,8 +307,14 @@ KEYPAD = {
 
 
 def _trim_front(text: str, room: int) -> str:
-    """Fit `text` into `room` characters by dropping its start ("…yer 10")."""
-    return text if len(text) <= room or room < 2 else "…" + text[len(text) - room + 1 :]
+    """Fit `text` into `room` characters: keep its start, and a trailing number if
+    it has one ("Layer 10" -> "Laye…10", "Navigation" -> "Navig…")."""
+    if len(text) <= room or room < 2:
+        return text
+    num = re.search(r"\d+$", text)
+    if num and room > len(num.group()) + 1:
+        return text[: room - 1 - len(num.group())] + "…" + num.group()
+    return text[: room - 1] + "…"
 
 
 @dataclass
@@ -623,6 +629,11 @@ def _index_suffix(name: str, index: int) -> str:
     return "" if name == f"Layer {index}" else f" (layer {index})"
 
 
+def _md_cell(text: str) -> str:
+    """Escape a markdown table cell: a `|` in a layer name must not split the row."""
+    return text.replace("|", "\\|")
+
+
 def _cell(text: str) -> str:
     text = text if len(text) <= CELL else text[: CELL - 1] + "…"
     return text.center(CELL)
@@ -712,7 +723,7 @@ def render_markdown(km: Keymap, lab: Labeller, geo: Geometry, meta: dict, svg_na
             lg = lab.legend(raw)
             if lg.hold or lg.desc or lg.kind == "special" or raw in km.dual_funcs:
                 where = geo.pos.get(ki, f"#{ki}")
-                special.append(f"| {where} | {lg.text()} | `{raw}` | {lg.desc} |")
+                special.append(f"| {_md_cell(where)} | {_md_cell(lg.text())} | `{raw}` | {_md_cell(lg.desc)} |")
         if special:
             out += ["| Pos | Legend | Keycode | Does |", "|---|---|---|---|", *special, ""]
     return "\n".join(out).rstrip() + "\n"

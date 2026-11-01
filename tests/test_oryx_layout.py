@@ -340,8 +340,8 @@ def test_long_layer_key_legend_keeps_layer_number(four_layers):
     four_layers.layers[1].name = "Layer 10"
     four_layers.layers[2].name = "Navigation"
     lab = ol.Labeller(four_layers)
-    assert lab.legend("OSL(1)").text(11) == "OSL …yer 10"
-    assert lab.legend("TG(2)").text(11) == "TG …igation"
+    assert lab.legend("OSL(1)").text(11) == "OSL Laye…10"
+    assert lab.legend("TG(2)").text(11) == "TG Navigat…"
     assert len(lab.legend("TG(2)").text(11)) <= 11
     assert lab.legend("TG(2)").text() == "TG Navigation"
 
@@ -349,14 +349,14 @@ def test_long_layer_key_legend_keeps_layer_number(four_layers):
 def test_long_mo_legend_keeps_layer_number(four_layers):
     four_layers.layers[2].name = "Navigation Layer 2"
     lg = ol.Labeller(four_layers).legend("MO(2)")
-    assert lg.text(11) == "…on Layer 2"
+    assert lg.text(11) == "Navigatio…2"
     assert len(lg.text(11)) == 11 and lg.text() == "Navigation Layer 2"
 
 
 def test_tap_hold_legend_keeps_layer_number(four_layers):
     lab = ol.Labeller(four_layers)
     assert lab.legend("LT(1, KC_SPACE)").text() == "Space/Layer 1"
-    assert lab.legend("LT(1, KC_SPACE)").text(11) == "Space/…er 1"
+    assert lab.legend("LT(1, KC_SPACE)").text(11) == "Space/Lay…1"
     assert lab.legend("MT(MOD_LGUI, KC_A)").text(11) == "A/Super"  # fits: unchanged
     assert lab.legend("LT(1, KC_SPACE)").text(11).endswith("1")
 
@@ -368,6 +368,24 @@ def test_specials_table_has_descriptions(four_layers):
     assert "| Pos | Legend | Keycode | Does |" in md
     assert "| TG Layer 2 | `TG(2)` | Toggles Layer 2 on/off. |" in md
     assert "| Layer 1 | `MO(1)` | Hold for Layer 1. |" in md
+
+
+def test_trimmed_names_stay_distinct(four_layers):
+    four_layers.layers[1].name = "Navigation"
+    four_layers.layers[2].name = "Application"
+    lab = ol.Labeller(four_layers)
+    a, b = (lab.legend(f"LT({i}, KC_SPACE)").text(11) for i in (1, 2))
+    assert a != b and len(a) <= 11 and len(b) <= 11
+
+
+def test_specials_table_escapes_pipes(four_layers):
+    four_layers.layers[1].name = "Nav | Sym"
+    four_layers.layers[0].keys[1] = "MO(1)"
+    geo = ol.Geometry.build(make_info(), four_layers)
+    md = ol.render_markdown(four_layers, ol.Labeller(four_layers), geo, {}, None)
+    row = next(l for l in md.splitlines() if "`MO(1)`" in l)
+    assert "Nav \\| Sym" in row
+    assert len(row.replace("\\|", "").split("|")) - 2 == 4  # four cells
 
 
 def test_viewer_mod_branch_prefers_desc():

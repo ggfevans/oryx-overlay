@@ -306,6 +306,11 @@ KEYPAD = {
 }
 
 
+def _trim_front(text: str, room: int) -> str:
+    """Fit `text` into `room` characters by dropping its start ("…yer 10")."""
+    return text if len(text) <= room or room < 2 else "…" + text[len(text) - room + 1 :]
+
+
 @dataclass
 class Legend:
     tap: str = ""
@@ -325,11 +330,18 @@ class Legend:
         if self.kind == "none":
             return "·"
         if self.hold:
-            return f"{self.tap}/{self.hold}"
+            tap, hold = self.tap, self.hold
+            if width and len(tap) + 1 + len(hold) > width:
+                # Keep the tap label and trim the front of the hold label, but leave the
+                # hold at least 5 characters so a layer number survives a long tap label.
+                hold_room = max(width - len(tap) - 1, min(len(hold), 5))
+                hold = _trim_front(hold, hold_room)
+                tap = tap if len(tap) + 1 + len(hold) <= width else tap[: max(width - len(hold) - 2, 1)] + "…"
+            return f"{tap}/{hold}"
         if not self.func:
             return self.tap
         room = width - (len(self.func) + 1 if self.note else 0)
-        tap = self.tap if not width or len(self.tap) <= room else "…" + self.tap[len(self.tap) - room + 1 :]
+        tap = self.tap if not width else _trim_front(self.tap, room)
         return f"{self.func} {tap}" if self.note else tap
 
 
@@ -698,11 +710,11 @@ def render_markdown(km: Keymap, lab: Labeller, geo: Geometry, meta: dict, svg_na
         special = []
         for ki, raw in enumerate(layer.keys):
             lg = lab.legend(raw)
-            if lg.hold or lg.note or lg.kind == "special" or raw in km.dual_funcs:
+            if lg.hold or lg.desc or lg.kind == "special" or raw in km.dual_funcs:
                 where = geo.pos.get(ki, f"#{ki}")
-                special.append(f"| {where} | {lg.text()} | `{raw}` |")
+                special.append(f"| {where} | {lg.text()} | `{raw}` | {lg.desc} |")
         if special:
-            out += ["| Pos | Legend | Keycode |", "|---|---|---|", *special, ""]
+            out += ["| Pos | Legend | Keycode | Does |", "|---|---|---|---|", *special, ""]
     return "\n".join(out).rstrip() + "\n"
 
 

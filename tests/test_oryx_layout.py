@@ -353,6 +353,23 @@ def test_long_mo_legend_keeps_layer_number(four_layers):
     assert len(lg.text(11)) == 11 and lg.text() == "Navigation Layer 2"
 
 
+def test_tap_hold_legend_keeps_layer_number(four_layers):
+    lab = ol.Labeller(four_layers)
+    assert lab.legend("LT(1, KC_SPACE)").text() == "Space/Layer 1"
+    assert lab.legend("LT(1, KC_SPACE)").text(11) == "Space/…er 1"
+    assert lab.legend("MT(MOD_LGUI, KC_A)").text(11) == "A/Super"  # fits: unchanged
+    assert lab.legend("LT(1, KC_SPACE)").text(11).endswith("1")
+
+
+def test_specials_table_has_descriptions(four_layers):
+    four_layers.layers[0].keys[1] = "MO(1)"
+    geo = ol.Geometry.build(make_info(), four_layers)
+    md = ol.render_markdown(four_layers, ol.Labeller(four_layers), geo, {}, None)
+    assert "| Pos | Legend | Keycode | Does |" in md
+    assert "| TG Layer 2 | `TG(2)` | Toggles Layer 2 on/off. |" in md
+    assert "| Layer 1 | `MO(1)` | Hold for Layer 1. |" in md
+
+
 def test_viewer_mod_branch_prefers_desc():
     html = (Path(ol.__file__).parent / "viewer.html").read_text(encoding="utf-8")
     assert "mod: k.desc ? k.desc : k.hold" in html

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -58,7 +60,42 @@ def test_empty_name_in_conf_is_rejected(tmp_path):
     assert "KEYMAP_NAME" in r.stderr
 
 
-def test_settings_deny_other_flash_targets():
+def test_empty_env_name_with_no_conf_line_is_rejected(tmp_path):
+    """KEYMAP_NAME= in the environment is set-but-empty: it is not defaulted, so load_config dies."""
+    r = load(tmp_path, env_name="")
+    assert r.returncode != 0
+    assert "KEYMAP_NAME" in r.stderr
+
+
+def deny_rules():
     deny = json.loads((ROOT / ".claude/settings.json").read_text())["permissions"]["deny"]
-    for pat in ("make *:dfu*", "make *:teensy*", "make *:avrdude*", "make *:st-*"):
-        assert f"Bash({pat})" in deny
+    return [d[len("Bash("):-1] for d in deny if d.startswith("Bash(make ")]
+
+
+def denied(target):
+    return any(fnmatch.fnmatchcase(f"make kb/rev:km:{target}", pat) for pat in deny_rules())
+
+
+# Every flashing target in platforms/{avr,chibios}/flash.mk of ZSA's firmware25 tree.
+FLASH_TARGETS = [
+    "flash", "teensy", "dfu", "dfu-start", "dfu-ee", "dfu-split-left", "dfu-split-right",
+    "avrdude", "avrdude-loop", "avrdude-split-left", "avrdude-split-right",
+    "usbasp", "bootloadhid", "hid_bootloader",
+    "dfu-util", "dfu-util-split-left", "dfu-util-split-right", "uf2-split-left", "uf2-split-right",
+    "st-link-cli", "st-flash",
+]
+
+
+@pytest.mark.parametrize("target", FLASH_TARGETS)
+def test_settings_deny_every_flash_target(target):
+    assert denied(target)
+
+
+def test_settings_deny_covers_cached_qmk_flash_targets():
+    """Whatever flash.mk defines in the cached tree (if present) is denied; these files only define flashers."""
+    files = sorted((ROOT / ".cache").glob("qmk_firmware-*/platforms/*/flash.mk"))
+    if not files:
+        pytest.skip("no cached QMK tree")
+    for f in files:
+        for target in re.findall(r"^([a-z0-9_-]+):", f.read_text(), re.M):
+            assert denied(target), f"{f.parent.name}: make <kb>:<km>:{target} is not denied"

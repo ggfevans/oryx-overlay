@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Follow-up to #9 and #10. `make docker-<target>` treats an empty `author.*`/`committer.*` git setting as unset and falls back to `user.*` (git does the same), so the identity is no longer dropped; the flash deny list also covers `:usbasp*`, `:bootloadhid*`, `:hid_bootloader*` and `:uf2-split-*`, and every target in the pinned tree's `flash.mk` files is tested; an empty `KEYMAP_NAME` in the environment is pinned as rejected. Covered by `tests/test_docker_env.py` and `tests/test_keymap_name.py`.
 - TG, TO, OSL, DF, TT and MO keys are described as what they do ("Toggles Layer 1 on/off", "Switches to", "Next key only on", ...) in the viewer and drawn as `TG Layer 1` in `keymap.md`, instead of as tap/hold keys (only LT and mod-taps are). Layers without a name in Oryx are called `Layer 0`, `Layer 1`, ... (was `L0`, `L1`), and a layer name is never printed next to a position (`L4.5 on Layer 1`, `**Layer 0** (L0.1)`), so they no longer read as the same thing. Covered by `tests/test_oryx_layout.py`. (#45)
 
 - A layer named with a leading `-` (e.g. `-Nav`) no longer blanks every drawing: layers are selected with `--select-layers=NAME`, so keymap-drawer's argparse can't read the name as a flag. Covered by `tests/test_oryx_layout.py`. (#18)

@@ -91,11 +91,19 @@ def test_settings_deny_every_flash_target(target):
     assert denied(target)
 
 
+def qmk_tree():
+    """The tree for the layout's firmware version, resolved as scripts/lib.sh does (CACHE_DIR, XDG)."""
+    r = subprocess.run(["bash", "-c", 'source "$1/scripts/lib.sh" && load_config && printf %s "$(qmk_dir)"', "_", str(ROOT)],
+                       capture_output=True, text=True, env=dict(ENV, HOME=str(Path.home())))
+    return Path(r.stdout) if r.returncode == 0 and r.stdout else None
+
+
 def test_settings_deny_covers_cached_qmk_flash_targets():
     """Whatever flash.mk defines in the cached tree (if present) is denied; these files only define flashers."""
-    files = sorted((ROOT / ".cache").glob("qmk_firmware-*/platforms/*/flash.mk"))
+    tree = qmk_tree()
+    files = sorted(tree.glob("platforms/*/flash.mk")) if tree else []
     if not files:
-        pytest.skip("no cached QMK tree")
+        pytest.skip("no cached QMK tree for the layout's firmware version")
     for f in files:
         for target in re.findall(r"^([a-z0-9_-]+):", f.read_text(), re.M):
             assert denied(target), f"{f.parent.name}: make <kb>:<km>:{target} is not denied"

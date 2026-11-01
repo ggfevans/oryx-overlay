@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import shutil
 import sys
 import zipfile
@@ -17,6 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
+import gen_locale_legends as gen  # noqa: E402
 import oryx_fetch  # noqa: E402
 import oryx_layout as ol  # noqa: E402
 
@@ -186,6 +188,24 @@ def test_dual_function_keys(four_layers):
         ("pc", "MT(MOD_LSFT | MOD_LCTL | MOD_LALT, KC_F)", "F/Meh"),
         ("pc", "ST_MACRO_3", "Macro 3"),
         ("pc", "TD(DANCE_2)", "Dance 2"),
+        ("pc", "LM(2, MOD_LSFT)", "LM Layer 2"),
+        # Locale keycodes: the character each key produces, from keymap_german.h etc.
+        ("pc", "DE_Z", "Z"),
+        ("pc", "DE_UDIA", "Ü"),
+        ("pc", "DE_EXLM", "!"),  # S(DE_1)
+        ("pc", "DE_AT", "@"),  # ALGR(DE_Q)
+        ("pc", "DE_BSLS", "\\"),  # the header spells it "(backslash)"
+        ("pc", "DE_CIRC", "^"),  # "^ (dead)"
+        ("pc", "FR_A", "A"),
+        ("pc", "FR_EACU", "é"),  # keymap_french.h, not keymap_canadian_french.h's É
+        ("pc", "FR_EXLM", "!"),
+        ("pc", "MT(MOD_LCTL, DE_Z)", "Z/Ctrl"),
+        ("pc", "LT(1, FR_A)", "A/Layer 1"),
+        ("pc", "LCTL(DE_Z)", "Ctrl+Z"),
+        # A prefix no locale uses, and keycodes that only look like a locale.
+        ("pc", "XX_Z", "Xx Z"),
+        ("pc", "CM_TOGG", "Cm Togg"),  # combo toggle, not Colemak (CM_*)
+        ("pc", "EE_CLR", "Ee Clr"),  # EEPROM clear, not Estonian (EE_*)
     ],
 )
 def test_legends(four_layers, style, raw, text):
@@ -207,6 +227,42 @@ def test_layer_keys_are_not_tap_hold(four_layers, raw, desc):
     lg = ol.Labeller(four_layers).legend(raw)
     assert lg.kind == "layer" and lg.hold == "" and lg.desc == desc
     assert "/" not in lg.text()
+
+
+def test_lm_is_a_layer_key(four_layers):
+    lg = ol.Labeller(four_layers).legend("LM(2, MOD_LCTL | MOD_LSFT)")
+    assert (lg.tap, lg.hold, lg.kind, lg.func) == ("Layer 2", "", "layer", "LM")
+    assert lg.note == "+Ctrl+Shift"
+    assert lg.desc == "Hold for Layer 2 with Ctrl+Shift."
+
+
+@pytest.mark.parametrize(
+    "fn,hold",
+    [
+        ("LCAG_T", "Ctrl+Alt+Super"),
+        ("RCAG_T", "Ctrl+Alt+Super"),
+        ("SAGR_T", "Alt+Shift"),
+        ("CTL_T", "Ctrl"),
+        ("SFT_T", "Shift"),
+        ("ALT_T", "Alt"),
+        ("OPT_T", "Alt"),
+        ("GUI_T", "Super"),
+        ("CMD_T", "Super"),
+        ("WIN_T", "Super"),
+    ],
+)
+def test_mod_tap_aliases_keep_their_hold(four_layers, fn, hold):
+    lg = ol.Labeller(four_layers).legend(f"{fn}(KC_A)")
+    assert (lg.tap, lg.hold, lg.kind) == ("A", hold, "mod")
+
+
+def test_swap_hands_tap_keeps_its_hold(four_layers):
+    lg = ol.Labeller(four_layers).legend("SH_T(KC_A)")
+    assert (lg.tap, lg.hold) == ("A", "Swap Hands")
+
+
+def test_lcag_modifies_a_key(four_layers):
+    assert ol.Labeller(four_layers).legend("LCAG(KC_A)").text() == "Ctrl+Alt+Super+A"
 
 
 def test_tap_hold_layer_keys_keep_hold(four_layers):
@@ -278,6 +334,45 @@ def test_lint_flags_trap_and_dangling():
     issues = ol.lint(km, ol.Labeller(km))
     assert ("error", "Layer 0: `MO(9)` points at layer 9, which does not exist") in issues
     assert any("Layer 2: entered with TG but has no TO/TG key to leave" in m for _, m in issues)
+
+
+def test_lm_reaches_its_layer():
+    base = base_keys()
+    base[0] = "LM(1, MOD_LCTL)"
+    base[40] = "KC_SPACE"  # drop the fixture's LT(1, ...), so only LM reaches layer 1
+    base[48] = "KC_ESCAPE"  # and its TG(2)
+    km = ol.parse_keymap(make_keymap([base, filler(), filler()]))
+    ol.assign_layer_names(km, None)
+    lab = ol.Labeller(km)
+    geo = ol.Geometry.build(make_info(), km)
+    assert lab.targets("LM(1, MOD_LCTL)") == [("LM", 1)]
+    text = "\n".join(m for _, m in ol.lint(km, lab))
+    assert "Layer 1: no key reaches" not in text
+    assert "Layer 1: entered with" not in text  # held, so there is nothing to leave
+    assert "Layer 2: no key reaches" in text
+    access = {a["name"]: a["how"] for a in ol.access_map(km, lab, geo)}
+    assert access["Layer 1"] == ["hold the layer key on Layer 0 (L0.0)"]
+    # The key that holds a layer is marked on that layer's drawing, as for MO.
+    yaml_text, _ = ol.drawer_yaml(km, lab, geo, {})
+    assert "held" in yaml_text.split('"Layer 1":')[1].splitlines()[1]
+
+
+def test_multi_mod_keycode_does_not_split_its_table_row():
+    base = base_keys()
+    base[0] = "LM(1, MOD_LCTL | MOD_LSFT)"
+    km = ol.parse_keymap(make_keymap([base, filler()]))
+    ol.assign_layer_names(km, None)
+    md = ol.render_markdown(km, ol.Labeller(km), ol.Geometry.build(make_info(), km), {}, None)
+    assert "| `LM(1, MOD_LCTL \\| MOD_LSFT)` | Hold for Layer 1 with Ctrl+Shift. |" in md
+
+
+def test_lm_pointing_at_a_missing_layer_is_an_error():
+    base = base_keys()
+    base[0] = "LM(9, MOD_LCTL)"
+    km = ol.parse_keymap(make_keymap([base, filler()]))
+    ol.assign_layer_names(km, None)
+    issues = ol.lint(km, ol.Labeller(km))
+    assert ("error", "Layer 0: `LM(9, MOD_LCTL)` points at layer 9, which does not exist") in issues
 
 
 def test_access_map(four_layers):
@@ -546,3 +641,79 @@ def test_render_draws_layer_named_with_leading_dash(tmp_path):
     for name in ("keymap.svg", "keymap-base.svg", "index.html"):
         assert (out / name).exists()
     assert "-Nav" in (out / "index.html").read_text(encoding="utf-8")
+
+
+def test_locale_table_missing_falls_back(four_layers, monkeypatch):
+    """Without the table a locale key keeps the old title-cased legend: never a crash."""
+    monkeypatch.setattr(ol, "LOCALES", {})
+    assert ol.Labeller(four_layers).legend("DE_Z").text() == "De Z"
+
+
+@pytest.mark.parametrize("content", [None, "not json", "[]", '{"legends": 1}'])
+def test_load_locales_survives_a_bad_table(tmp_path, content):
+    path = tmp_path / "locale_legends.json"
+    if content is not None:
+        path.write_text(content)
+    assert ol.load_locales(path) == {}
+
+
+QMK_TREE = Path(__file__).resolve().parents[1] / ".cache" / gen.FIRMWARE
+needs_tree = pytest.mark.skipif(not QMK_TREE.is_dir(), reason="pinned QMK tree not cached")
+
+
+@pytest.mark.parametrize(
+    "comment,legend",
+    [
+        ("Z", "Z"),
+        ("^ (dead)", "^"),
+        ("(backslash)", "\\"),
+        ("(backslash, not physically present)", "\\"),
+        ("| (not physically present)", "|"),
+        ("µ (dead Greek key)", "µ"),
+        ("Muhenkan (無変換)", None),  # too long to draw: the generator uses the name
+        ("(non-breaking space)", None),
+        ("\xad (soft hyphen)", None),  # invisible
+        ("", None),
+    ],
+)
+def test_legend_from_header_comment(comment, legend):
+    assert gen.legend(comment) == legend
+
+
+def test_generator_prefers_the_plain_header_and_a_real_legend(tmp_path):
+    (tmp_path / "keymap_french.h").write_text("#define FR_EACU KC_2 // é\n#define FR_NBSP KC_3\n")
+    (tmp_path / "keymap_canadian_french.h").write_text("#define FR_EACU KC_SLSH // É\n")
+    (tmp_path / "keymap_nordic.h").write_text("#define NO_QUOT KC_RBRC // a sentence about this umlaut key\n")
+    (tmp_path / "keymap_norwegian.h").write_text("#define NO_QUOT KC_BSLS // '\n#define QMK_NO_VERSION 1 // x\n")
+    (tmp_path / "keymap_us.h").write_text("#define KC_TILD S(KC_GRAVE) // ~\n")
+    assert gen.table(tmp_path) == {
+        "FR": {"EACU": "é", "NBSP": "NBSP"},
+        "NO": {"QUOT": "'"},
+    }
+
+
+@needs_tree
+def test_mod_aliases_cover_every_mod_tap_in_the_pinned_tree():
+    """Each `X_T(kc)` macro in QMK must give the modifiers that macro really holds."""
+    src = (QMK_TREE / "quantum" / "quantum_keycodes.h").read_text(encoding="utf-8")
+    macros = dict(re.findall(r"^#define (\w+)_T\(kc\) (.+?)(?:\s*//.*)?$", src, re.M))
+    assert "LCAG" in macros and "SAGR" in macros
+    del macros["SH"]  # swap-hands tap, not a mod: test_swap_hands_tap_keeps_its_hold
+
+    def mods(name: str) -> set[str]:
+        body = macros[name]
+        if m := re.fullmatch(r"(\w+)_T\(kc\)", body):
+            return mods(m.group(1))
+        return {ol.MOD_KEYS[tok] for tok in re.findall(r"MOD_(\w+)", body)}
+
+    assert {name: ol.MOD_ALIASES.get(name) for name in macros} == {name: mods(name) for name in macros}
+
+
+@needs_tree
+def test_locale_table_matches_the_pinned_tree():
+    """Regenerating must not change what the table says; a key QMK adds later is fine."""
+    fresh = gen.table(QMK_TREE / "quantum" / "keymap_extras")
+    for prefix, legends in ol.LOCALES.items():
+        for name, legend in legends.items():
+            if name in fresh.get(prefix, {}):
+                assert fresh[prefix][name] == legend, f"{prefix}_{name}: run scripts/gen_locale_legends.py"

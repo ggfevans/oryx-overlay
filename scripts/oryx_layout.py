@@ -257,6 +257,9 @@ MOD_ALIASES = {
     "LCS": {"ctrl", "shift"}, "RCS": {"ctrl", "shift"}, "LAG": {"alt", "gui"}, "RAG": {"alt", "gui"},
     "LCG": {"ctrl", "gui"}, "RCG": {"ctrl", "gui"}, "LSG": {"shift", "gui"}, "RSG": {"shift", "gui"},
     "SGUI": {"shift", "gui"}, "SCMD": {"shift", "gui"}, "SWIN": {"shift", "gui"},
+    "LCAG": {"ctrl", "alt", "gui"}, "RCAG": {"ctrl", "alt", "gui"}, "SAGR": {"shift", "alt"},
+    # Only as mod-taps (CTL_T(kc), ...)
+    "CTL": {"ctrl"}, "SFT": {"shift"}, "ALT": {"alt"}, "OPT": {"alt"}, "GUI": {"gui"}, "CMD": {"gui"}, "WIN": {"gui"},
 }
 MOD_KEYS = {
     "LEFT_SHIFT": "shift", "LSFT": "shift", "LSHIFT": "shift", "RIGHT_SHIFT": "shift", "RSFT": "shift",
@@ -306,6 +309,22 @@ KEYPAD = {
 }
 
 
+LOCALE_FILE = Path(__file__).with_name("locale_legends.json")
+
+
+def load_locales(path: Path = LOCALE_FILE) -> dict[str, dict[str, str]]:
+    """{"DE": {"Z": "Z", "EXLM": "!", ...}} from QMK's keymap_*.h (scripts/gen_locale_legends.py).
+    Empty if the table can't be read: locale keys then fall back to their name."""
+    try:
+        legends = json.loads(path.read_text(encoding="utf-8"))["legends"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+    return legends if isinstance(legends, dict) else {}
+
+
+LOCALES = load_locales()
+
+
 def _trim(text: str, room: int) -> str:
     """Fit `text` into `room` characters: keep its start, and a trailing number if
     it has one ("Layer 10" -> "Laye…10", "Navigation" -> "Navig…")."""
@@ -322,7 +341,7 @@ class Legend:
     tap: str = ""
     hold: str = ""
     kind: str = ""  # "", trans, none, layer, mod, special
-    # Layer keys that are not tap-hold (TG, TO, OSL, DF, TT, MO): `func` is the QMK
+    # Layer keys that are not tap-hold (TG, TO, OSL, DF, TT, MO, LM): `func` is the QMK
     # function, `note` a short drawn label, `desc` the sentence the viewer shows.
     func: str = ""
     note: str = ""
@@ -395,6 +414,9 @@ class Labeller:
         kc = kc.strip()
         if kc in BASIC:
             return BASIC[kc]
+        prefix, _, name = kc.partition("_")
+        if name in LOCALES.get(prefix, {}):
+            return LOCALES[prefix][name]
         kc = kc.removeprefix("KC_")
         if kc in MOD_KEYS:
             return self.mods[MOD_KEYS[kc]]
@@ -432,8 +454,13 @@ class Labeller:
             return Legend(name, "", "layer", fn, note, desc.format(name))
         if fn == "LT" and len(args) == 2:
             return Legend(self.legend(args[1]).text(), self.layer(args[0]), "layer")
+        if fn == "LM" and len(args) == 2:
+            name, mods = self.layer(args[0]), self.modtext(self.modset(args[1])) or args[1].strip()
+            return Legend(name, "", "layer", fn, f"+{mods}", f"Hold for {name} with {mods}.")
         if fn == "MT" and len(args) == 2:
             return Legend(self.legend(args[1]).text(), self.modtext(self.modset(args[0])), "mod")
+        if fn == "SH_T" and len(args) == 1:  # swap-hands tap, the one `_T` that isn't a mod
+            return Legend(self.legend(args[0]).text(), "Swap Hands", "mod")
         if fn.endswith("_T") and len(args) == 1:
             return Legend(self.legend(args[0]).text(), self.modtext(self.modset(fn[:-2])), "mod")
         if fn == "OSM" and len(args) == 1:
@@ -464,7 +491,7 @@ class Labeller:
         if not c:
             return []
         fn, args = c
-        if (fn in LAYER_FUNCS and len(args) == 1) or (fn == "LT" and len(args) == 2):
+        if (fn in LAYER_FUNCS and len(args) == 1) or (fn in ("LT", "LM") and len(args) == 2):
             idx = self.km.layer_index(args[0])
             if idx is not None:
                 return [(fn, idx)]
@@ -675,6 +702,7 @@ def access_map(km: Keymap, lab: Labeller, geo: Geometry) -> list[dict]:
 FUNC_WORDS = {
     "MO": "hold the layer key",
     "LT": "hold the layer key",
+    "LM": "hold the layer key",
     "TT": "hold or double-tap the layer key",
     "OSL": "tap the one-shot key",
     "TG": "toggle key",
@@ -723,7 +751,7 @@ def render_markdown(km: Keymap, lab: Labeller, geo: Geometry, meta: dict, svg_na
             lg = lab.legend(raw)
             if lg.hold or lg.desc or lg.kind == "special" or raw in km.dual_funcs:
                 where = geo.pos.get(ki, f"#{ki}")
-                special.append(f"| {_md_cell(where)} | {_md_cell(lg.text())} | `{raw}` | {_md_cell(lg.desc)} |")
+                special.append(f"| {_md_cell(where)} | {_md_cell(lg.text())} | `{_md_cell(raw)}` | {_md_cell(lg.desc)} |")
         if special:
             out += ["| Pos | Legend | Keycode | Does |", "|---|---|---|---|", *special, ""]
     return "\n".join(out).rstrip() + "\n"
@@ -752,7 +780,7 @@ def drawer_yaml(km: Keymap, lab: Labeller, geo: Geometry, colours: dict[int, dic
     for layer in km.layers:
         for ki, raw in enumerate(layer.keys):
             for fn, tgt in lab.targets(raw):
-                if fn in ("MO", "LT", "TT", "OSL") and tgt != layer.index:
+                if fn in ("MO", "LT", "LM", "TT", "OSL") and tgt != layer.index:
                     held.setdefault(tgt, set()).add(ki)
 
     css = [SVG_STYLE]

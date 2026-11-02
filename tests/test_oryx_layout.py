@@ -720,7 +720,8 @@ def test_i18n_h_picks_the_header_that_matches_its_values():
 
 
 def test_i18n_h_value_with_long_modifier_names():
-    assert labeller_with_i18n("#define DE_X1 LSFT(KC_1)\n#define DE_X2 RALT(KC_Q)\n").legend("DE_X2").text() == "@"
+    lab = labeller_with_i18n("#define DE_X1 LSFT(KC_1)\n#define DE_X2 RALT(KC_Q)\n#define DE_X3 RSFT(KC_1)\n")
+    assert [lab.legend(k).text() for k in ("DE_X1", "DE_X2", "DE_X3")] == ["!", "@", "!"]
 
 
 @pytest.mark.parametrize(
@@ -755,6 +756,67 @@ def test_read_i18n_at_a_git_ref(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     assert ol.read_i18n("HEAD:layout/keymap.c")["DE_UE"] == "KC_LBRC"
     assert ol.read_i18n("HEAD~1:layout/keymap.c") == {}
+
+
+def oryx_only_keymap() -> str:
+    """A keymap with DE_SHOUT, which only an i18n.h can explain."""
+    keys = base_keys()
+    keys[0] = "DE_SHOUT"
+    return make_keymap([keys, filler()])
+
+
+def test_render_cli_uses_i18n_h_beside_keymap(tmp_path):
+    km = tmp_path / "keymap.c"
+    km.write_text(oryx_only_keymap())
+    (tmp_path / "i18n.h").write_text("#define DE_SHOUT S(KC_1)\n")
+    info = tmp_path / "info.json"
+    info.write_text(json.dumps(make_info()))
+    assert ol.main(["render", "--keymap", str(km), "--meta", "/x", "--info", str(info), "--out", str(tmp_path / "docs"), "--no-svg"]) == 0
+    md = (tmp_path / "docs" / "keymap.md").read_text(encoding="utf-8")
+    assert "De Shout" not in md
+    assert "[     !     ]" in md.split("```text")[1]
+
+
+def test_render_cli_without_i18n_h_humanises(tmp_path):
+    km = tmp_path / "keymap.c"
+    km.write_text(oryx_only_keymap())
+    assert ol.main(["render", "--keymap", str(km), "--meta", "/x", "--out", str(tmp_path / "docs"), "--no-svg"]) == 0
+    assert "De Shout" in (tmp_path / "docs" / "keymap.md").read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def i18n_history(tmp_path, monkeypatch):
+    """A repo where DE_SHOUT changes meaning: no i18n.h, then `!`, then `"`, same keymap.c."""
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-C", str(tmp_path), *args], check=True)
+
+    git("init", "-q")
+    layout = tmp_path / "layout"
+    layout.mkdir()
+    (layout / "keymap.c").write_text(oryx_only_keymap())
+    git("add", "-A")
+    git("commit", "-qm", "no i18n.h")
+    for value in ("S(KC_1)", "S(KC_2)"):
+        (layout / "i18n.h").write_text(f"#define DE_SHOUT {value}\n")
+        git("add", "-A")
+        git("commit", "-qm", value)
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
+
+
+def test_diff_reads_each_revisions_own_i18n_h(i18n_history, capsys):
+    ol.main(["diff", "HEAD~1:layout/keymap.c", "HEAD:layout/keymap.c", "--meta", "/x"])
+    assert capsys.readouterr().out.strip() == '- **Layer 0** (L0.0): `!` → `"`'
+
+
+def test_diff_old_ref_against_working_tree(i18n_history, capsys):
+    ol.main(["diff", "HEAD~1:layout/keymap.c", "layout/keymap.c", "--meta", "/x"])
+    assert capsys.readouterr().out.strip() == '- **Layer 0** (L0.0): `!` → `"`'
+
+
+def test_diff_revision_without_i18n_h_humanises(i18n_history, capsys):
+    ol.main(["diff", "HEAD~2:layout/keymap.c", "HEAD~1:layout/keymap.c", "--meta", "/x"])
+    assert capsys.readouterr().out.strip() == "- **Layer 0** (L0.0): `De Shout` → `!`"
 
 
 @pytest.mark.parametrize(

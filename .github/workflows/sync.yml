@@ -37,7 +37,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          scripts/sync.sh --push --ci
+          # Keep the exit code for the summary: 3 is a merge conflict, anything else an error.
+          rc=0
+          scripts/sync.sh --push --ci || rc=$?
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
 
       - name: Summary
         if: always()
@@ -47,11 +51,16 @@ jobs:
               echo "## Synced from Oryx"
               echo
               git log -1 --format='%B' oryx
-            else
-              echo "## Sync stopped"
+            elif [ "${{ steps.sync.outputs.exit_code }}" = "3" ]; then
+              echo "## Sync stopped: merge conflict"
               echo
-              echo "Oryx's latest export conflicts with your edits in \`layout/\` (or the fetch failed; see the log)."
+              echo "Oryx's latest export conflicts with your edits in \`layout/\`."
               echo "The new export is on the \`oryx\` branch. Resolve locally with \`make sync\`, or ask Claude Code: \`/oryx-sync\`."
+            else
+              echo "## Sync failed"
+              echo
+              echo "The sync stopped with an error (exit code \`${{ steps.sync.outputs.exit_code }}\`), not a merge conflict. Nothing was merged into your branch."
+              echo "Read the **Sync** step's log: it says what went wrong and what to do. The export may or may not have reached the \`oryx\` branch."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 

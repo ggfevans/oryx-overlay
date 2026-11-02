@@ -18,6 +18,11 @@ user changed in Oryx on top of the repo's own edits.
    - "Oryx layout unchanged": say so, and stop unless the user wants a rebuild.
    - "Merged": continue to step 4.
    - Exit code 3, "Merge conflict": go to step 3.
+   - Any other `error:` (exit 1): read the message, it names the cause and the fix.
+     Untracked files in `layout/`: move them to `custom/` or commit them. Never delete
+     files yourself to get past it. Not a conflict, so don't go to step 3.
+   - A warning that `origin/oryx` was rewritten or recreated is informational; the sync
+     carries on and the merge result still needs the usual build check.
    - "could not find layout": the layout ID in `oryx.conf` is wrong, the layout is
      private, or `KEYBOARD` names a different board. Tell the user which, then stop.
 3. **Resolve conflicts** (also the entry point for `/oryx-sync resolve`).

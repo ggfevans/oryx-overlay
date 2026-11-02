@@ -90,6 +90,17 @@ def porcelain(tree: Path) -> str:
                           capture_output=True, text=True, check=True).stdout
 
 
+def test_i18n_h_is_staged_beside_keymap_c(tmp_path):
+    """Recent exports `#include "i18n.h"`: without the copy the build can't find it."""
+    repo = make_repo(tmp_path / "repo")
+    write(repo / "layout/i18n.h", "#define DE_UE KC_LBRC\n")
+    tree = make_tree(tmp_path / "cache/qmk_firmware-firmware25")
+
+    staged(run(repo, tmp_path / "cache"))
+
+    assert (tree / "keyboards/zsa/moonlander/reva/keymaps/oryx-overlay/i18n.h").read_text() == "#define DE_UE KC_LBRC\n"
+
+
 def test_reset_removes_leftovers_and_stages_modules_outside_tree(tmp_path):
     repo = make_repo(tmp_path / "repo", modules=["oryx_overlay/screensaver"])
     tree = make_tree(tmp_path / "cache/qmk_firmware-firmware25")

@@ -126,6 +126,7 @@ class Keymap:
     dual_funcs: dict[str, tuple[str, str]] = field(default_factory=dict)
     ledmap: dict[int, list[tuple[int, int, int]]] = field(default_factory=dict)
     tri_layers: list[tuple[str, str, str]] = field(default_factory=list)  # update_tri_layer_state(a, b, c)
+    i18n: dict[str, str] = field(default_factory=dict)  # name -> value, from the i18n.h beside keymap.c
 
     def layer_index(self, arg: str) -> int | None:
         """Layer number for a layer argument: a digit, or a name such as _LOWER."""
@@ -312,17 +313,58 @@ KEYPAD = {
 LOCALE_FILE = Path(__file__).with_name("locale_legends.json")
 
 
-def load_locales(path: Path = LOCALE_FILE) -> dict[str, dict[str, str]]:
-    """{"DE": {"Z": "Z", "EXLM": "!", ...}} from QMK's keymap_*.h (scripts/gen_locale_legends.py).
+def load_locales(path: Path = LOCALE_FILE) -> tuple[dict, dict]:
+    """(legends, layouts) from QMK's keymap_*.h, see scripts/gen_locale_legends.py.
+    legends: {"DE": {"Z": "Z", "EXLM": "!", ...}}, by keycode name.
+    layouts: {"DE": [{"Y": "Z", "S(1)": "!", ...}, ...]}, by value, one map per header.
     Empty if the table can't be read: locale keys then fall back to their name."""
     try:
-        legends = json.loads(path.read_text(encoding="utf-8"))["legends"]
+        data = json.loads(path.read_text(encoding="utf-8"))
+        legends, layouts = data["legends"], data["layouts"]
     except (OSError, ValueError, KeyError, TypeError):
+        return {}, {}
+    return (legends, layouts) if isinstance(legends, dict) and isinstance(layouts, dict) else ({}, {})
+
+
+LOCALES, LAYOUTS = load_locales()
+
+
+def canon_value(value: str) -> str:
+    """One spelling for a locale define's value: "S(KC_MINS)" -> "S(MINS)"."""
+    value = re.sub(r"\s|\bKC_", "", value)
+    return re.sub(r"\bRALT\(", "ALGR(", re.sub(r"\b[LR]SFT\(", "S(", value))
+
+
+def parse_i18n(text: str) -> dict[str, str]:
+    """The `#define DE_UE KC_LBRC` lines of the i18n.h Oryx ships beside keymap.c."""
+    return {name: value.strip() for name, value in re.findall(r"^[ \t]*#define[ \t]+([A-Z0-9]+_\w+)[ \t]+([^\n/]+)", text, re.M)}
+
+
+def read_i18n(keymap: str) -> dict[str, str]:
+    """The i18n.h beside a keymap.c path or REF:path; exports before it have none."""
+    ref, sep, path = keymap.rpartition(":")
+    try:
+        return parse_i18n(read_source(f"{ref}{sep}{Path(path).with_name('i18n.h')}"))
+    except (SystemExit, OSError, UnicodeDecodeError):
         return {}
-    return legends if isinstance(legends, dict) else {}
 
 
-LOCALES = load_locales()
+def i18n_legends(i18n: dict[str, str]) -> dict[str, str]:
+    """Legends for an i18n.h. Oryx has its own names, so go by each define's value, in
+    the header of that prefix that agrees best with what the names say (FR_ is four
+    layouts); a tie goes to the first, the plain national one. KC_ macros have no layout."""
+    out: dict[str, str] = {}
+    values = {name: canon_value(value) for name, value in i18n.items()}
+    for prefix in {name.partition("_")[0] for name in i18n} & LAYOUTS.keys():
+        ours = {name: value for name, value in values.items() if name.startswith(f"{prefix}_")}
+        names = LOCALES.get(prefix, {})
+
+        def agreement(layout: dict[str, str]) -> int:
+            return sum(value in layout and layout[value] == names.get(name[len(prefix) + 1 :]) for name, value in ours.items())
+
+        best = max(LAYOUTS[prefix], key=agreement)
+        out.update({name: best[value] for name, value in ours.items() if value in best})
+    return out
 
 
 def _trim(text: str, room: int) -> str:
@@ -386,6 +428,7 @@ class Labeller:
         self.km = km
         self.mods = MOD_TEXT[style]
         self.names = {l.index: l.name or f"Layer {l.index}" for l in km.layers}
+        self.i18n = i18n_legends(km.i18n)
 
     def layer(self, arg: str) -> str:
         idx = self.km.layer_index(arg)
@@ -414,6 +457,8 @@ class Labeller:
         kc = kc.strip()
         if kc in BASIC:
             return BASIC[kc]
+        if kc in self.i18n:
+            return self.i18n[kc]
         prefix, _, name = kc.partition("_")
         if name in LOCALES.get(prefix, {}):
             return LOCALES[prefix][name]
@@ -878,6 +923,7 @@ def load_json(path: str | None) -> dict:
 
 def load_all(args) -> tuple[Keymap, Labeller, Geometry, dict, dict]:
     km = parse_keymap(read_source(args.keymap))
+    km.i18n = read_i18n(args.keymap)
     meta = load_json(args.meta)
     assign_layer_names(km, meta)
     info = load_json(args.info)
@@ -1121,6 +1167,7 @@ def cmd_render(args) -> int:
 def cmd_diff(args) -> int:
     old = parse_keymap(read_source(args.old))
     new = parse_keymap(read_source(args.new))
+    old.i18n, new.i18n = read_i18n(args.old), read_i18n(args.new)
     meta = load_json(args.meta)
     assign_layer_names(old, meta)
     assign_layer_names(new, meta)

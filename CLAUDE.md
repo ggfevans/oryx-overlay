@@ -18,7 +18,7 @@ The user edits keys in Oryx. You help with everything around that: syncing, QMK 
 | `docs/keymap.md` | Generated | **Read this first** to understand the layout: every layer as a text grid, layer access, lint checks, special keys with raw keycodes. |
 | `docs/keymap.svg`, `docs/index.html` | Generated | Drawings for humans, plus the Lighting tab (RGB effect picker). Never edit. |
 | `scripts/rgb_effects.js` | Tooling | JavaScript port of QMK's RGB Matrix effects (GPL-2.0-or-later). `tests/test_rgb_effects.py` checks it against the C. |
-| `scripts/locale_legends.json` | Generated | What locale keycodes (`DE_Z`, `FR_EACU`) type, from QMK's `keymap_*.h` (GPL-2.0-or-later). Regenerate with `scripts/gen_locale_legends.py`. |
+| `scripts/locale_legends.json` | Generated | What locale keycodes (`DE_Z`, `FR_EACU`) type, from QMK's `keymap_*.h` (GPL-2.0-or-later); `layout/i18n.h`, when an export has one, picks the legend by value. Regenerate with `scripts/gen_locale_legends.py`. |
 | `scripts/` | Tooling | `sync.sh`, `build.sh`, `render.sh`, `self-update.sh`, `oryx_layout.py`, `oryx_fetch.py`. |
 | `.oryx-overlay-manifest`, `.oryx-overlay-version` | Template | Which paths are template tooling, and the template release this repo is at. `make self-update` merges newer releases into those paths only. Don't edit the version by hand. |
 | `CLAUDE.local.md` | User | Personal notes for Claude (git-ignored). `CLAUDE.md` is template tooling that `make self-update` updates, so put your own notes here instead; self-update never touches this file. |

@@ -27,7 +27,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -132,6 +132,7 @@ class Keymap:
     combos: list[str] = field(default_factory=list)  # what each COMBO(keys, result) sends
     intercepted: set[str] = field(default_factory=set)  # keys process_record_user swallows, see _intercepted()
     i18n: dict[str, str] = field(default_factory=dict)  # name -> value, from the i18n.h beside keymap.c
+    dances: dict[str, tuple[str, str, str, str]] = field(default_factory=dict)  # DANCE_n -> see _parse_dance()
 
     def layer_index(self, arg: str) -> int | None:
         """Layer number for a layer argument: a digit, or a name such as _LOWER."""
@@ -142,6 +143,11 @@ class Keymap:
             if layer.ident == arg:
                 return layer.index
         return None
+
+    def dance(self, raw: str) -> tuple[str, str, str, str] | None:
+        """What a TD(DANCE_n) key does, when its code could be read."""
+        c = call(self.resolve(raw.strip()))
+        return self.dances.get(c[1][0]) if c and c[0] == "TD" and len(c[1]) == 1 else None
 
     def resolve(self, kc: str, depth: int = 0) -> str:
         """Expand simple object-like #defines (e.g. DUAL_FUNC_0 -> LT(14, KC_8))."""
@@ -213,6 +219,40 @@ def _compact(kc: str) -> str:
     return "".join(kc.split())
 
 
+_DANCE_CALL = re.compile(r"\b(register_code16|tap_code16|layer_on|layer_move|layer_invert)\(\s*([^;]+?)\s*\)\s*;")
+_DANCE_STEPS = ("SINGLE_TAP", "SINGLE_HOLD", "DOUBLE_TAP", "DOUBLE_HOLD", "DOUBLE_SINGLE_TAP")
+
+
+def _parse_dance(src: str, finished: str) -> tuple[str, str, str, str] | None:
+    """(tap, hold, double tap, double hold) from Oryx's dance_N_finished. A double tap of ""
+    means two plain presses of the tap, which is what Oryx writes when none is set. None for
+    anything else: code that isn't one of these plain actions can't be compared by reading it."""
+    m = re.search(rf"\b{finished}\s*\([^)]*\)\s*\{{", src)
+    if not m:
+        return None
+    try:
+        body, _ = balanced(src, m.end() - 1)
+        sw = re.search(r"\bswitch\s*\([^{]*\{", body)
+        inner, end = balanced(body, sw.end() - 1) if sw else ("", 0)
+    except ValueError:
+        return None
+    parts = re.split(r"\bcase\s+(\w+)\s*:", inner)
+    if not sw or body[end:].strip() or parts[0].strip() or len(parts) < 3:
+        return None
+    cases: dict[str, list[str]] = {}
+    for label, code in zip(parts[1::2], parts[2::2]):
+        if label not in _DANCE_STEPS or _DANCE_CALL.sub("", code).replace("break;", "").strip():
+            return None
+        cases[label] = [arg if fn.endswith("code16") else f"{_LAYER_CALLS[fn]}({arg})" for fn, arg in _DANCE_CALL.findall(code)]
+    tap, hold, double_hold = (cases.get(step, [""]) for step in ("SINGLE_TAP", "SINGLE_HOLD", "DOUBLE_HOLD"))
+    double = cases.get("DOUBLE_TAP", tap + tap)
+    if not all(len(steps) == 1 for steps in (tap, hold, double_hold)) or cases.get("DOUBLE_SINGLE_TAP", tap + tap) != tap + tap:
+        return None
+    if double != tap + tap and len(double) != 1:
+        return None
+    return tap[0], hold[0], "" if double == tap + tap else double[0], double_hold[0]
+
+
 def parse_keymap(text: str) -> Keymap:
     src = strip_comments(text)
 
@@ -279,16 +319,30 @@ def parse_keymap(text: str) -> Keymap:
 
     km = Keymap(layout_macro=layout_macro, layers=layers, row_sizes=row_sizes, defines=defines, dual_funcs=dual, ledmap=ledmap, tri_layers=tri, combos=combos)
     km.intercepted = {_compact(km.resolve(label)) for label in _intercepted(src)}
+    for m in re.finditer(r"\[\s*(\w+)\s*\]\s*=\s*ACTION_TAP_DANCE_FN_ADVANCED\(\s*\w+\s*,\s*(\w+)\s*,", src):
+        dance = _parse_dance(src, m.group(2))
+        if dance:
+            km.dances[m.group(1)] = dance
     return km
+
+
+def layer_entries(meta: dict | None) -> list[tuple[int, str]]:
+    """(position, title) for the well-formed `layers` entries in Oryx metadata."""
+    entries = (meta or {}).get("layers")
+    out = []
+    for entry in entries if isinstance(entries, list) else []:
+        title = entry.get("title") or "" if isinstance(entry, dict) else None
+        try:
+            if isinstance(title, str):
+                out.append((int(entry["position"]), title.strip()))
+        except (KeyError, TypeError, ValueError):
+            pass
+    return out
 
 
 def assign_layer_names(km: Keymap, meta: dict | None) -> None:
     """Name layers from Oryx metadata; fall back to "Layer 0", "Layer 1", ... Names are unique."""
-    titles = {}
-    for entry in (meta or {}).get("layers", []) or []:
-        title = (entry.get("title") or "").strip()
-        if title and title.lower() != "layer":
-            titles[int(entry.get("position", -1))] = title
+    titles = {position: title for position, title in layer_entries(meta) if title and title.lower() != "layer"}
     seen: set[str] = set()
     for layer in km.layers:
         layer.title = titles.get(layer.index) or ("" if layer.ident.isdigit() else layer.ident)
@@ -538,15 +592,20 @@ class Labeller:
             return "Meh"
         return self.mods["join"].join(self.mods[m] for m in MOD_ORDER if m in mods)
 
+    def locale(self, kc: str) -> str | None:
+        """The character a locale keycode types, from i18n.h or else QMK's headers."""
+        if kc in self.i18n:
+            return self.i18n[kc]
+        prefix, _, name = kc.partition("_")
+        return LOCALES.get(prefix, {}).get(name)
+
     def basic(self, kc: str) -> str:
         kc = kc.strip()
         if kc in BASIC:
             return BASIC[kc]
-        if kc in self.i18n:
-            return self.i18n[kc]
-        prefix, _, name = kc.partition("_")
-        if name in LOCALES.get(prefix, {}):
-            return LOCALES[prefix][name]
+        typed = self.locale(kc)
+        if typed:
+            return typed
         kc = kc.removeprefix("KC_")
         if kc in MOD_KEYS:
             return self.mods[MOD_KEYS[kc]]
@@ -562,6 +621,21 @@ class Labeller:
             return "Colour"
         return kc.replace("_", " ").title() if len(kc) > 3 else kc
 
+    def tap_hold(self, tap: str, hold: str) -> Legend:
+        hold_lg = self.legend(hold) if hold else Legend()
+        kind = "layer" if hold_lg.kind == "layer" else "mod"
+        return Legend(self.legend(tap).text(), hold_lg.tap if hold_lg.kind == "layer" else hold_lg.text(), kind)
+
+    def spelled_out(self, raw: str) -> str:
+        """Legend text, except that a tap dance says what it does instead of its number."""
+        dance = self.km.dance(raw)
+        if not dance:
+            return self.legend(raw).text()
+        tap, hold, double, double_hold = dance
+        text = self.tap_hold(tap or "KC_NO", hold).text()
+        text += f", double-tap {self.legend(double).text()}" if double else ""
+        return text + (f", double-hold {self.legend(double_hold).text()}" if double_hold else "")
+
     def legend(self, raw: str) -> Legend:
         kc = raw.strip()
         if kc in ("KC_TRANSPARENT", "KC_TRNS", "_______", "TRANSPARENT"):
@@ -569,10 +643,7 @@ class Labeller:
         if kc in ("KC_NO", "XXXXXXX"):
             return Legend(kind="none")
         if kc in self.km.dual_funcs:
-            tap, hold = self.km.dual_funcs[kc]
-            hold_lg = self.legend(hold) if hold else Legend()
-            kind = "layer" if hold_lg.kind == "layer" else "mod"
-            return Legend(self.legend(tap).text(), hold_lg.tap if hold_lg.kind == "layer" else hold_lg.text(), kind)
+            return self.tap_hold(*self.km.dual_funcs[kc])
         kc = self.km.resolve(kc)
         c = call(kc)
         if c is None:
@@ -1401,19 +1472,30 @@ def cmd_render(args) -> int:
 
 def behaviour(lab: Labeller, raw: str, layer_id=lambda idx: "layer") -> str:
     """What a key does, comparable between revisions. A DUAL_FUNC_n becomes its tap and hold,
-    so renumbering the defines changes nothing, and `layer_id` says which layer a layer key
-    means. The default treats all layers alike, for comparing content before layers are paired."""
+    so renumbering the defines changes nothing. So does a TD(DANCE_n) with no double tap or
+    double hold of its own, which is the same key: Oryx writes a tap-hold either way. Other
+    dances go by their actions, so their number means nothing either. `layer_id` says which
+    layer a layer key means; the default treats all layers alike, for comparing content
+    before layers are paired."""
     km = lab.km
+
+    def parts(fn: str, *keys: str) -> str:
+        return f"{fn}({','.join(behaviour(lab, key, layer_id) for key in keys)})"
+
     kc = raw.strip()
     if kc in km.dual_funcs:
-        return f"DUAL({','.join(behaviour(lab, part, layer_id) for part in km.dual_funcs[kc])})"
+        return parts("DUAL", *km.dual_funcs[kc])
+    dance = km.dance(kc)
+    if dance:
+        tap, hold, double, double_hold = dance
+        return parts("TD", tap or "KC_NO", hold, double, double_hold) if double or double_hold else parts("DUAL", tap or "KC_NO", hold)
     unparsed_dual = kc.startswith("DUAL_FUNC_")
     kc = km.resolve(kc)
     if unparsed_dual or _compact(kc) in km.intercepted:  # any layer in there is a dummy
         return _compact(kc)
     c = call(kc)
     if c is None:
-        return lab.i18n.get(kc, kc)
+        return "|".join(sorted(_compact(mod) for mod in kc.split("|"))) if "|" in kc else lab.locale(kc) or _compact(kc)
     fn, args = c
     head = []
     if is_layer_call(fn, args):
@@ -1424,21 +1506,33 @@ def behaviour(lab: Labeller, raw: str, layer_id=lambda idx: "layer") -> str:
 
 def pair_layers(old: Keymap, new: Keymap, lo: Labeller, ln: Labeller) -> dict[int, int]:
     """Which new layer each old layer became: {old index: new index}. The rest were removed
-    or added. A candidate pair's rank, best first, and the best still free wins:
+    or added.
+
+    First the layers that can only be one thing: keys found once on each side, then a name
+    left once on each side. Those that stayed in order fence off gaps, and identical layers
+    (blanks, copies) pair inside a gap, in order, the same name and then the same position
+    breaking ties: a new blank layer is not the old blank further along. What is left goes to
+    the best of these, ties in layer order:
 
       0. same content and same name
-      1. same content, not blank (a rename; a name that moved to other keys doesn't count)
+      1. same content, not blank (a rename)
       2. same name, the closest match first when a name is used twice
       3. similar: over half of the positions that hold a key on either side match
       4. same position, unless both sides are named and differ in keys (a replacement)
 
     A blank key counts for nothing, or all sparse layers would look alike. Fallback names
-    such as "Layer 3" are positions, so only Oryx names count. Ties go in layer order, which
-    keeps identical layers in order.
+    such as "Layer 3" are positions, so only Oryx names count.
     """
 
-    def content(lab: Labeller, layer: Layer) -> list[str]:
-        return ["" if lab.legend(k).kind in ("trans", "none") else behaviour(lab, k) for k in layer.keys]
+    def content(lab: Labeller, layer: Layer) -> tuple[str, ...]:
+        return tuple("" if lab.legend(k).kind in ("trans", "none") else behaviour(lab, k) for k in layer.keys)
+
+    before = {l.index: content(lo, l) for l in old.layers}
+    after = {l.index: content(ln, l) for l in new.layers}
+
+    def identical(o: Layer, n: Layer) -> bool:
+        a = before[o.index]
+        return a == after[n.index] and (any(a) or o.title == n.title or not (o.title and n.title))
 
     def rank(o: Layer, n: Layer) -> tuple[int, float] | None:
         a, b = before[o.index], after[n.index]
@@ -1458,16 +1552,50 @@ def pair_layers(old: Keymap, new: Keymap, lo: Labeller, ln: Labeller) -> dict[in
             return 4, 0
         return None
 
-    before = {l.index: content(lo, l) for l in old.layers}
-    after = {l.index: content(ln, l) for l in new.layers}
-    candidates = []
+    def align(olds: list[Layer], news: list[Layer]) -> list[tuple[int, int]]:
+        """The longest in-order matching of identical layers."""
+        best = [[((0, 0, 0), [])] * (len(news) + 1) for _ in range(len(olds) + 1)]
+        for i, o in enumerate(olds, 1):
+            for j, n in enumerate(news, 1):
+                options = [best[i - 1][j], best[i][j - 1]]
+                if identical(o, n):
+                    (count, names, places), matched = best[i - 1][j - 1]
+                    options.append(((count + 1, names + (o.title == n.title), places + (o.index == n.index)), matched + [(o.index, n.index)]))
+                best[i][j] = max(options, key=lambda option: option[0])
+        return best[-1][-1][1]
+
+    pairs: dict[int, int] = {}
+
+    def free(km: Keymap) -> list[Layer]:
+        taken = pairs if km is old else pairs.values()
+        return [l for l in km.layers if l.index not in taken]
+
+    seen_old, seen_new = Counter(before.values()), Counter(after.values())
     for o in old.layers:
         for n in new.layers:
+            if before[o.index] == after[n.index] and any(before[o.index]) and seen_old[before[o.index]] == seen_new[after[n.index]] == 1:
+                pairs[o.index] = n.index
+    named_old, named_new = Counter(l.title for l in free(old)), Counter(l.title for l in free(new))
+    for o in free(old):
+        for n in free(new):
+            if o.title and o.title == n.title and named_old[o.title] == named_new[n.title] == 1:
+                pairs[o.index] = n.index
+
+    moved = moved_layers(pairs)
+    fences = sorted((oi, ni) for oi, ni in pairs.items() if oi not in moved)
+    bounds = [(-1, -1)] + fences + [(float("inf"), float("inf"))]
+    for (low_o, low_n), (high_o, high_n) in zip(bounds, bounds[1:]):
+        olds = [l for l in free(old) if low_o < l.index < high_o]
+        news = [l for l in free(new) if low_n < l.index < high_n]
+        pairs.update(align(olds, news))
+
+    candidates = []
+    for o in free(old):
+        for n in free(new):
             r = rank(o, n)
             if r:
-                candidates.append((r[0], -r[1], o.index, n.index))
-    pairs: dict[int, int] = {}
-    for _, _, oi, ni in sorted(candidates):
+                candidates.append((r[0], -r[1], o.index != n.index, o.index, n.index))
+    for _, _, _, oi, ni in sorted(candidates):
         if oi not in pairs and ni not in pairs.values():
             pairs[oi] = ni
     return pairs
@@ -1510,7 +1638,7 @@ def cmd_diff(args) -> int:
     for oi, ni in survivors:
         o, n = olds[oi], news[ni]
         # Without old names there is no telling a new name from a rename.
-        if o.title != n.title and (o.title or old_meta.get("layers")):
+        if o.title != n.title and (o.title or layer_entries(old_meta)):
             lines.append(f"- Layer renamed: **{o.name}** → **{n.name}**")
     moved = moved_layers(pairs)
     for oi, ni in survivors:
@@ -1532,7 +1660,7 @@ def cmd_diff(args) -> int:
     for oi, ni in survivors:
         for ki, (a, b) in enumerate(zip(olds[oi].keys, news[ni].keys)):
             if behaviour(lo, a, old_layer) != behaviour(ln, b, new_layer):
-                la, lb = lo.legend(a).text(), ln.legend(b).text()
+                la, lb = lo.spelled_out(a), ln.spelled_out(b)
                 where = geo.pos.get(ki, f"#{ki}")
                 keys.append(f"- **{news[ni].name}** ({where}): `{la}` → `{lb}`" + (f"  (`{a}` → `{b}`)" if args.raw or la == lb else ""))
     if args.limit and len(keys) > args.limit:
@@ -1563,6 +1691,13 @@ def cmd_parse(args) -> int:
     return 0
 
 
+def key_limit(text: str) -> int:
+    value = int(text)
+    if value < 0:
+        raise argparse.ArgumentTypeError("must be 0 (no limit) or more")
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--style", choices=["pc", "mac"], default="pc", help="modifier legends: pc (Ctrl/Alt/Super) or mac (⌃⌥⌘)")
@@ -1585,7 +1720,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("old", help="path or git REF:path, e.g. HEAD~1:layout/keymap.c")
     p.add_argument("new", nargs="?", default="layout/keymap.c")
     p.add_argument("--raw", action="store_true", help="also show raw keycodes")
-    p.add_argument("--limit", type=int, default=0, metavar="N", help="list at most N key changes (layer changes are always listed)")
+    p.add_argument("--limit", type=key_limit, default=0, metavar="N", help="list at most N key changes (layer changes are always listed)")
     common(p, keymap=False)
     p.set_defaults(func=cmd_diff)
 

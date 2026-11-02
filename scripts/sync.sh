@@ -91,8 +91,12 @@ RC=0
   # Key-level summary of what changed, for the commit body.
   SUMMARY=""
   if git cat-file -e HEAD:layout/keymap.c 2>/dev/null; then
-    SUMMARY="$("$PY" "$ROOT/scripts/oryx_layout.py" --style "$LEGEND_STYLE" diff HEAD:layout/keymap.c layout/keymap.c \
-      --meta layout/.oryx.json --limit 60 2>/dev/null || true)"
+    # A summary is worth having, not worth losing a sync over.
+    if ! SUMMARY="$("$PY" "$ROOT/scripts/oryx_layout.py" --style "$LEGEND_STYLE" diff HEAD:layout/keymap.c layout/keymap.c \
+      --meta layout/.oryx.json --limit 60)"; then
+      warn "layout summary unavailable (see above); committing the export without it"
+      SUMMARY="Key-level summary unavailable: the layout diff failed."
+    fi
   fi
   git commit --quiet -m "oryx: $NOTE" -m "Oryx revision $REVISION, firmware v$VERSION." ${SUMMARY:+-m "$SUMMARY"}
 ) || RC=$?

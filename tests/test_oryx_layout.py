@@ -1840,3 +1840,200 @@ def test_sync_commit_message_is_bounded_but_keeps_layer_lines(sync_repo, tmp_pat
     assert "- Layer added: **Mouse** (position 1)" in body
     assert sum(line.startswith("- **") for line in body.splitlines()) == 60
     assert re.search(r"^- …and \d+ more key changes$", body, re.M)
+
+
+# --- diff: review follow-ups (#12) -------------------------------------------------
+
+
+def test_diff_i18n_h_on_one_side_only_is_no_change(tmp_path, capsys):
+    """Legends fall back to the locale tables, so DE_SS is ß with or without an i18n.h."""
+    src = make_keymap([edited(base_keys(), 0, "DE_SS"), filler()])
+    for side in ("a", "b"):
+        (tmp_path / side).mkdir()
+        (tmp_path / side / "keymap.c").write_text(src)
+    (tmp_path / "a/i18n.h").write_text("#define DE_SS KC_MINS\n")
+    assert ol.main(["diff", str(tmp_path / "a/keymap.c"), str(tmp_path / "b/keymap.c"), "--meta", "/x"]) == 0
+    assert capsys.readouterr().out.strip() == "No keymap changes."
+
+
+PLAIN = titles(*["Layer"] * 9)
+
+
+def test_diff_blank_insert_before_a_later_blank_layer(layout_diff):
+    """Oryx creates layers blank. The old blank is at the end, and must stay there."""
+    old = [base_keys(), NAV, SYM, FUN, filler()]
+    new = export([base_to(sym=3), NAV, filler(), SYM, FUN, filler()], 4)
+    assert layout_diff(old, PLAIN, new, PLAIN) == "- Layer added: **Layer 2** (position 2)"
+
+
+def test_diff_blank_insert_beside_blanks_moves_nothing(layout_diff):
+    old = [base_keys(), NAV, filler(), filler(), FUN]
+    new = export([base_to(sym=3), NEW, NAV, filler(), filler(), FUN], 4)
+    out = layout_diff(old, PLAIN, edit_ref(new), PLAIN)
+    assert out == "- Layer added: **Layer 1** (position 1)"
+
+
+def edit_ref(src: str) -> str:
+    """The LT in base_to() defaults to layer 1: send it after Nav, which moved to 2."""
+    return src.replace("LT(1, KC_SPACE)", "LT(2, KC_SPACE)")
+
+
+def test_diff_copying_a_layer_over_another_stays_in_place(layout_diff):
+    """Layer 1 became a copy of layer 2: layer 1 changed, layer 2 didn't, and nothing moved."""
+    out = layout_diff(FOUR, PLAIN, [base_keys(), SYM, SYM, FUN], PLAIN)
+    assert out.splitlines() == [f"- **Layer 1** (L0.{i}): `{a}` → `{b}`" for i, (a, b) in enumerate(zip("←↓↑→", "!@#$"))]
+
+
+def dances(**bodies) -> str:
+    """Oryx's tap dance code: name=(tap, hold, double tap, double hold), "" for none.
+    A double tap of "" is the plain two presses Oryx writes when none is set."""
+    out, table = [], []
+    for name, (tap, hold, double, double_hold) in bodies.items():
+        n = name.removeprefix("DANCE_")
+        cases = [f"case SINGLE_TAP: {tap}; break;" if "(" in tap and not tap.startswith("KC") else f"case SINGLE_TAP: register_code16({tap}); break;"]
+        if hold:
+            cases.append(f"case SINGLE_HOLD: {hold if hold.startswith('layer_') else f'register_code16({hold})'}; break;")
+        cases.append(f"case DOUBLE_TAP: register_code16({double}); break;" if double else f"case DOUBLE_TAP: register_code16({tap}); register_code16({tap}); break;")
+        if double_hold:
+            cases.append(f"case DOUBLE_HOLD: register_code16({double_hold}); break;")
+        cases.append(f"case DOUBLE_SINGLE_TAP: tap_code16({tap}); register_code16({tap});")
+        body = "\n        ".join(cases)
+        out.append(
+            f"void dance_{n}_finished(tap_dance_state_t *state, void *user_data) {{\n"
+            f"    dance_state[{n}].step = dance_step(state);\n"
+            f"    switch (dance_state[{n}].step) {{\n        {body}\n    }}\n}}\n"
+        )
+        table.append(f"        [DANCE_{n}] = ACTION_TAP_DANCE_FN_ADVANCED(on_dance_{n}, dance_{n}_finished, dance_{n}_reset),")
+    return "\n".join(out) + "\ntap_dance_action_t tap_dance_actions[] = {\n" + "\n".join(table) + "\n};\n"
+
+
+def danced(key: str, code: str, at: int = 14) -> str:
+    """FOUR with `key` at L1.2, where base_keys() has DUAL_FUNC_0, plus dance code."""
+    return export([edited(base_keys(), at, key), NAV, SYM, FUN]) + code
+
+
+def test_parse_dances_real_shape():
+    km = ol.parse_keymap(danced("TD(DANCE_0)", dances(DANCE_0=("KC_1", "KC_EXLM", "", ""), DANCE_1=("KC_Z", "", "", "KC_LEFT_CTRL"), DANCE_2=("KC_U", "", "LGUI(KC_SPACE)", ""))))
+    assert km.dances == {
+        "DANCE_0": ("KC_1", "KC_EXLM", "", ""),
+        "DANCE_1": ("KC_Z", "", "", "KC_LEFT_CTRL"),
+        "DANCE_2": ("KC_U", "", "LGUI(KC_SPACE)", ""),
+    }
+
+
+def test_diff_tap_dance_to_dual_function_with_same_behaviour(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_DLR", "KC_LEFT_GUI", "", "")))
+    assert layout_diff(old, FOUR_NAMES, FOUR, FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_tap_dance_to_dual_function_with_new_behaviour(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_DLR", "KC_EXLM", "", "")))
+    assert layout_diff(old, FOUR_NAMES, FOUR, FOUR_NAMES) == "- **Base** (L1.2): `$/!` → `$/Super`"
+
+
+def test_diff_tap_dance_renumber_is_no_change(layout_diff):
+    body = ("KC_U", "", "LGUI(KC_SPACE)", "")
+    old = danced("TD(DANCE_0)", dances(DANCE_0=body))
+    new = danced("TD(DANCE_4)", dances(DANCE_4=body))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_tap_dance_body_edit_under_the_same_number(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_EQUAL", "KC_ESCAPE", "", "")))
+    new = danced("TD(DANCE_0)", dances(DANCE_0=("KC_MPLY", "KC_MNXT", "", "")))
+    out = layout_diff(old, FOUR_NAMES, new, FOUR_NAMES, "--raw")
+    assert out.startswith("- **Base** (L1.2): `=/Esc` → `") and "TD(DANCE_0)" in out
+
+
+def test_diff_double_hold_stays_a_dance(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_Z", "", "", "KC_LEFT_CTRL")))
+    new = danced("TD(DANCE_0)", dances(DANCE_0=("KC_Z", "KC_LEFT_CTRL", "", "")))
+    out = layout_diff(old, FOUR_NAMES, new, FOUR_NAMES)
+    assert out == "- **Base** (L1.2): `Z, double-hold Ctrl` → `Z/Ctrl`"
+
+
+def test_diff_double_tap_is_part_of_the_dance(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_U", "", "KC_V", "")))
+    new = danced("TD(DANCE_1)", dances(DANCE_1=("KC_U", "", "KC_W", "")))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "- **Base** (L1.2): `U, double-tap V` → `U, double-tap W`"
+
+
+def test_diff_tap_dance_hold_follows_its_layer(layout_diff):
+    """Oryx's hold can be layer_move, here to Sym, which an insert renumbers."""
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_ESCAPE", "layer_move(2)", "", "")))
+    new = export([edited(base_to(nav=2, sym=3), 14, "TD(DANCE_0)"), NEW, NAV, SYM, FUN], 4) + dances(DANCE_0=("KC_ESCAPE", "layer_move(3)", "", ""))
+    assert layout_diff(old, FOUR_NAMES, new, titles("Base", "Mouse", "Nav", "Sym", "Fun")) == "- Layer added: **Mouse** (position 1)"
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        "void dance_0_finished(tap_dance_state_t *state, void *user_data) {\n  rgblight_toggle();\n}\n",
+        "void dance_0_finished(tap_dance_state_t *state, void *user_data) {\n  switch (x) {\n    case SINGLE_TAP: my_code(); break;\n  }\n}\n",
+        "void dance_0_finished(tap_dance_state_t *state, void *user_data) {\n  switch (x) {\n    case TRIPLE_TAP: register_code16(KC_A); break;\n  }\n}\n",
+        "void dance_0_finished(tap_dance_state_t *state, void *user_data) {\n  switch (x) {\n",
+    ],
+)
+def test_diff_unreadable_dance_falls_back_to_its_number(layout_diff, broken):
+    table = "tap_dance_action_t tap_dance_actions[] = {\n  [DANCE_0] = ACTION_TAP_DANCE_FN_ADVANCED(on_dance_0, dance_0_finished, dance_0_reset),\n};\n"
+    src = danced("TD(DANCE_0)", broken + table)
+    assert ol.parse_keymap(src).dances == {}
+    assert layout_diff(src, FOUR_NAMES, src, FOUR_NAMES) == "No keymap changes."
+    other = src.replace("TD(DANCE_0)", "TD(DANCE_1)")
+    assert layout_diff(src, FOUR_NAMES, other, FOUR_NAMES) == "- **Base** (L1.2): `Dance 0` → `Dance 1`"
+
+
+@pytest.mark.parametrize(
+    "a,b",
+    [
+        ("MT(MOD_LSFT | MOD_LCTL, KC_A)", "MT(MOD_LSFT|MOD_LCTL, KC_A)"),
+        ("MT(MOD_LSFT | MOD_LCTL, KC_A)", "MT(MOD_LCTL | MOD_LSFT, KC_A)"),
+        ("OSM(MOD_LSFT|MOD_LALT)", "OSM( MOD_LALT | MOD_LSFT )"),
+        ("LM(1,MOD_LSFT|MOD_LCTL)", "LM(1, MOD_LCTL|MOD_LSFT)"),
+    ],
+)
+def test_diff_spelling_of_a_mod_set_is_no_change(layout_diff, a, b):
+    old, new = [edited(base_keys(), 0, a), NAV, SYM, FUN], [edited(base_keys(), 0, b), NAV, SYM, FUN]
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_different_mods_are_a_change(layout_diff):
+    old = [edited(base_keys(), 0, "MT(MOD_LSFT | MOD_LCTL, KC_A)"), NAV, SYM, FUN]
+    new = [edited(base_keys(), 0, "MT(MOD_LSFT | MOD_LALT, KC_A)"), NAV, SYM, FUN]
+    assert "L0.0" in layout_diff(old, FOUR_NAMES, new, FOUR_NAMES)
+
+
+@pytest.mark.parametrize("limit", ["-1", "x"])
+def test_diff_rejects_a_bad_limit(tmp_path, limit, capsys):
+    km = tmp_path / "keymap.c"
+    km.write_text(make_keymap(FOUR))
+    with pytest.raises(SystemExit) as exc:
+        ol.main(["diff", str(km), str(km), "--limit", limit])
+    assert exc.value.code == 2 and "--limit" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [
+        {"layers": "x"},
+        {"layers": 3},
+        {"layers": ["x", None]},
+        {"layers": [{"position": None, "title": "Nav"}]},
+        {"layers": [{"position": "x", "title": "Nav"}]},
+        {"layers": [{"position": 1, "title": 7}]},
+        {"layers": [{"title": "Nav"}]},
+    ],
+)
+def test_diff_malformed_old_layer_entries_are_ignored(layout_diff, meta):
+    out = layout_diff(FOUR, meta, [base_keys(), edited(NAV), SYM, FUN], FOUR_NAMES)
+    assert out == "- **Nav** (L0.0): `←` → `Home`"
+
+
+def test_sync_survives_a_failing_summary_and_says_so(sync_repo, tmp_path):
+    (sync_repo / "scripts/oryx_layout.py").write_text("raise RuntimeError('boom')\n")
+    temp_git(sync_repo, "commit", "-qam", "break the summary")
+    res = sync(sync_repo, tmp_path, make_keymap([base_keys(), NEW, SYM, FUN]), FOUR_NAMES)
+    assert res.returncode == 0, res.stderr
+    assert "warning:" in res.stderr and "summary" in res.stderr
+    body = subprocess.run(["git", "-C", str(sync_repo), "log", "-1", "oryx", "--format=%B"], capture_output=True, text=True, check=True).stdout
+    assert "summary unavailable" in body

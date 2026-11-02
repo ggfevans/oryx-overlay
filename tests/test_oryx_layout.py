@@ -1061,6 +1061,54 @@ def test_access_map_lists_combos():
     assert access["Layer 2"] == ["combo (OSL)"]
 
 
+def test_transparent_advice_when_the_entry_layer_stays_on():
+    # TG(1) latches layer 1, so a transparent key on layer 2 would reach its TG(2).
+    base = base_keys()
+    base[TG2], base[LT1] = "TG(1)", "KC_A"
+    middle = filler()
+    middle[0] = "TG(2)"
+    found = [m for m in traps(base, middle, closed(k0="KC_NO"), filler()) if m.startswith("Layer 2:")]
+    assert len(found) == 1
+    assert found[0].endswith("or make the key that sits over TG(Layer 2) transparent")
+
+
+def test_no_transparent_advice_when_the_entry_layer_is_gone():
+    # MO(1) is released, so layer 1 is off and a transparent key on layer 2 reaches base.
+    base = base_keys()
+    base[TG2], base[LT1], base[0] = "KC_A", "KC_A", "MO(1)"
+    middle = filler()
+    middle[5] = "TG(2)"
+    found = traps(base, middle, closed(k0="KC_NO"), filler())
+    assert len(found) == 1
+    assert found[0].endswith("In Oryx, add TO(Layer 0) or TG(Layer 2) on Layer 2")
+
+
+@pytest.mark.parametrize(
+    "head",
+    [
+        "if (record->event.pressed) switch (keycode) {",
+        "if (x) { y(); } else switch (keycode) {",
+        "if (x) y(); else switch (keycode) {",
+        "while (x) switch (keycode) {",
+    ],
+)
+def test_conditional_switch_does_not_swallow(head):
+    km = lt9_keymap(
+        "bool process_record_user(uint16_t keycode, keyrecord_t *record) {\n  " + head + "\n"
+        "    case LT(9, KC_F14):\n      return false;\n  }\n  return true;\n}\n"
+    )
+    assert LT9_ERROR in ol.lint(km, ol.Labeller(km))
+
+
+@pytest.mark.parametrize("head", ["foo();", "if (x) { foo(); }"])
+def test_switch_after_a_finished_statement_can_swallow(head):
+    km = lt9_keymap(
+        "bool process_record_user(uint16_t keycode, keyrecord_t *record) {\n  " + head + "\n  switch (keycode) {\n"
+        "    case LT(9, KC_F14):\n      return false;\n  }\n  return true;\n}\n"
+    )
+    assert not [i for i in ol.lint(km, ol.Labeller(km)) if i[0] == "error"]
+
+
 @pytest.mark.parametrize("name", ["<!--<script", "</script>", "a&b", "x\u2028y<>"])
 def test_embed_json_is_inert_in_script_block(name):
     data = {"layers": [{"name": name, "keys": ["</script>"]}]}

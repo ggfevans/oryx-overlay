@@ -184,7 +184,9 @@ def _intercepted(src: str) -> list[str]:
         body, _ = balanced(src, m.end() - 1)
         for sw in re.finditer(r"\bswitch\s*\(\s*keycode\s*\)\s*\{", body):
             before = body[: sw.start()]
-            if before.count("{") != before.count("}") or re.search(r"\breturn\b", before):
+            # `else switch` or `if (x) switch` is one statement with no braces to count.
+            own_statement = not before.strip() or before.rstrip()[-1] in ";}"
+            if not own_statement or before.count("{") != before.count("}") or re.search(r"\breturn\b", before):
                 continue  # the switch may not run for every event
             labels: list[str] = []
             parts = re.split(r"\bcase\s+(.+?)\s*:|\bdefault\s*:", balanced(body, sw.end() - 1)[0])
@@ -849,7 +851,8 @@ def trap_issues(km: Keymap, lab: Labeller) -> list[tuple[str, str]]:
                 fix = f"add DF({base.name}) on {layer.name}"
             else:
                 fix = f"add TO({base.name}) or TG({layer.name}) on {layer.name}"
-                if fn in ("TG", "TT") and tgt == layer.index:
+                # Only a layer still on lets a transparent key reach the entry key.
+                if fn in ("TG", "TT") and tgt == layer.index and source is not None and (stuck[0] | stuck[1]) >> source & 1:
                     fix += f", or make the key that sits over {entry} transparent"
             issues.append(("warn", f"{layer.name}: no way to leave this layer after {entry} on {where} {_TRAP_HEDGE}. In Oryx, {fix}"))
 

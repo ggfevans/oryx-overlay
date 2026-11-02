@@ -39,7 +39,7 @@ build: ## Compile firmware into build/ (also refreshes docs/)
 render: ## Redraw docs/keymap.svg and docs/keymap.md from layout/
 	@scripts/render.sh
 
-diff: ## Key-by-key changes since REF (default HEAD), e.g. make diff REF=HEAD~3
+diff: ## Layer and key changes since REF (default HEAD), e.g. make diff REF=HEAD~3
 	@scripts/layout.sh diff $(REF)
 
 lint: ## Check the layout for unreachable layers and dangling layer keys

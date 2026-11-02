@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -335,7 +336,7 @@ def test_lint_flags_trap_and_dangling():
     ol.assign_layer_names(km, None)
     issues = ol.lint(km, ol.Labeller(km))
     assert ("error", "Layer 0: `MO(9)` points at layer 9, which does not exist") in issues
-    assert any(m.startswith("Layer 2: no way to leave this layer after TG(2)") for _, m in issues)
+    assert any(m.startswith("Layer 2: no way to leave this layer after TG(Layer 2)") for _, m in issues)
 
 
 def test_lm_reaches_its_layer():
@@ -670,7 +671,8 @@ def test_toggling_a_lower_layer_does_not_leave():
 
 def test_trap_message_names_the_key_that_gets_you_there():
     assert traps(base_keys(), filler(), closed(), filler()) == [
-        "Layer 2: no way to leave this layer after TG(2) on Layer 0 (fine if a macro, combo, tap dance or custom code does)"
+        "Layer 2: no way to leave this layer after TG(Layer 2) on Layer 0 (fine if a macro, combo, tap dance or custom code does)."
+        " In Oryx, add TO(Layer 0) or TG(Layer 2) on Layer 2, or make the key that sits over TG(Layer 2) transparent"
     ]
 
 
@@ -695,7 +697,8 @@ def test_to_replaces_the_active_layers():
     layer3 = closed()
     layer3[5] = "KC_TRANSPARENT"
     assert traps(base, filler(), closed(k5="TG(3)", k6="TO(3)"), layer3) == [
-        "Layer 3: no way to leave this layer after TO(3) on Layer 2 (fine if a macro, combo, tap dance or custom code does)"
+        "Layer 3: no way to leave this layer after TO(Layer 3) on Layer 2 (fine if a macro, combo, tap dance or custom code does)."
+        " In Oryx, add TO(Layer 0) or TG(Layer 3) on Layer 3"
     ]
 
 
@@ -704,7 +707,8 @@ def test_to_cycle_that_never_returns_to_base():
     base = base_keys()
     base[TG2] = "TO(1)"
     assert traps(base, closed(k0="TO(2)"), closed(k0="TO(1)"), filler()) == [
-        "Layer 1, Layer 2: no way to get back to Layer 0 from these layers (fine if a macro, combo, tap dance or custom code does)"
+        "Layer 1, Layer 2: no way to get back to Layer 0 from these layers (fine if a macro, combo, tap dance or custom code does)."
+        " In Oryx, add TO(Layer 0) on them"
     ]
 
 
@@ -800,7 +804,7 @@ def test_tri_layer_is_on_only_with_both_layers():
 
 def test_too_many_states_says_so_instead_of_guessing(monkeypatch):
     monkeypatch.setattr(ol, "MAX_STATES", 1)
-    assert [m for _, m in lint_layers(base_keys(), filler(), filler(), filler()) if "too many" in m]
+    assert [m for _, m in lint_layers(base_keys(), filler(), filler(), filler()) if "trap check skipped" in m]
 
 
 def test_combo_reaches_a_layer():
@@ -880,6 +884,181 @@ def test_case_outside_process_record_user_is_not_a_helper():
     km = ol.parse_keymap(src + extra)
     ol.assign_layer_names(km, None)
     assert any(lvl == "error" for lvl, _ in ol.lint(km, ol.Labeller(km)))
+
+
+def with_process_record(layers: list[list[str]], function: str, defines: str = "") -> ol.Keymap:
+    """A keymap whose process_record_user is exactly `function`."""
+    src = make_keymap(layers)
+    src = src[: src.index("bool process_record_user")] + function
+    km = ol.parse_keymap(src.replace("#define DUAL_FUNC_0", defines + "\n#define DUAL_FUNC_0"))
+    ol.assign_layer_names(km, None)
+    return km
+
+
+def lt9_keymap(function: str) -> ol.Keymap:
+    base = base_keys()
+    base[0] = "LT(9, KC_F14)"
+    return with_process_record([base, filler(), filler(), filler()], function)
+
+
+LT9_ERROR = ("error", "Layer 0: `LT(9, KC_F14)` points at layer 9, which does not exist")
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        'SEND_STRING("{");',
+        "tap_code16('{');",
+        "#ifdef A\n  if (a) {\n#else\n  if (b) {\n#endif\n  }",
+    ],
+)
+def test_unbalanced_process_record_user_does_not_crash(line):
+    km = lt9_keymap("bool process_record_user(uint16_t keycode, keyrecord_t *record) {\n  " + line + "\n  return true;\n}\n")
+    assert km.intercepted == set()
+    assert LT9_ERROR in ol.lint(km, ol.Labeller(km))  # unreadable, so nothing is swallowed
+
+
+def test_unbalanced_combo_is_skipped_and_the_rest_still_read():
+    src = make_keymap([base_keys(), filler(), filler(), filler()])
+    km = ol.parse_keymap('const char *s = "COMBO(";\n' + src + "\ncombo_t c[] = { COMBO(combo0, OSL(2)) };\nconst char *t = \"COMBO(\";\n")
+    assert km.combos == ["OSL(2)"]
+
+
+def test_nested_switch_does_not_swallow_the_hold():
+    km = lt9_keymap(
+        "bool process_record_user(uint16_t keycode, keyrecord_t *record) {\n"
+        "  if (record->tap.count > 0) {\n    switch (keycode) {\n      case LT(9, KC_F14):\n"
+        "        tap_code(KC_A);\n        return false;\n    }\n  }\n  return true;\n}\n"
+    )
+    assert LT9_ERROR in ol.lint(km, ol.Labeller(km))
+
+
+def test_nested_switch_keeps_a_real_layer_reach():
+    base = base_keys()
+    base[0] = "LT(3, KC_F14)"
+    km = with_process_record(
+        [base, filler(), filler(), filler()],
+        "bool process_record_user(uint16_t keycode, keyrecord_t *record) {\n"
+        "  if (record->tap.count > 0) {\n    switch (keycode) {\n      case LT(3, KC_F14):\n"
+        "        tap_code(KC_A);\n        return false;\n    }\n  }\n  return true;\n}\n",
+    )
+    assert ol.Labeller(km).targets("LT(3, KC_F14)") == [("LT", 3)]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "if (x) return other(keycode); return false;",
+        "if (x) return y; return false;",
+    ],
+)
+def test_case_with_another_return_is_not_swallowed(body):
+    km = helper_keymap("6", body)
+    assert ("error", "Layer 0: `TH_LTGT` points at layer 6, which does not exist") in ol.lint(km, ol.Labeller(km))
+
+
+def test_early_return_before_the_switch_is_not_swallowed():
+    km = lt9_keymap(
+        "bool process_record_user(uint16_t keycode, keyrecord_t *record) {\n  if (x) return true;\n"
+        "  switch (keycode) {\n    case LT(9, KC_F14):\n      return false;\n  }\n  return true;\n}\n"
+    )
+    assert LT9_ERROR in ol.lint(km, ol.Labeller(km))
+
+
+def test_top_level_switch_with_only_return_false_is_swallowed():
+    km = lt9_keymap(
+        "bool process_record_user(uint16_t keycode, keyrecord_t *record) {\n"
+        "  switch (keycode) {\n    case LT(9, KC_F14):\n      if (x) { return false; }\n      tap_code(KC_A);\n      return false;\n  }\n"
+        "  return true;\n}\n"
+    )
+    assert not [i for i in ol.lint(km, ol.Labeller(km)) if i[0] == "error"]
+
+
+def test_key_transparent_on_every_active_layer_acts_as_layer_0():
+    # layer_switch_get_layer() ends in `return 0`: layer 0's key, even with layer 0 off.
+    base = base_keys()
+    base[5], base[6] = "DF(1)", "DF(0)"
+    assert traps(base, filler(), filler(), filler()) == []
+
+
+def test_transparent_all_the_way_down_does_nothing():
+    base = base_keys()
+    base[TG2] = "DF(2)"
+    base[5] = "KC_TRANSPARENT"
+    layer2 = closed(k5="KC_TRANSPARENT")
+    assert len(traps(base, filler(), layer2, filler())) == 1
+
+
+def test_tt_release_inverts_instead_of_clearing():
+    # OP_TAP_TOGGLE: hold TT(1), press TO(2), release, and layer 1 comes back on top of 2.
+    base = base_keys()
+    base[TG2] = "TT(1)"
+    middle = filler()
+    middle[0] = "TO(2)"
+    km = ol.parse_keymap(make_keymap([base, middle, closed(), filler()]))  # closed: no second TT tap
+    ol.assign_layer_names(km, None)
+    graph, _ = ol.layer_states(km, ol.Labeller(km))
+    assert (0b110, 1, frozenset()) in graph
+
+
+def test_trap_advice_uses_layer_names():
+    km = ol.parse_keymap(make_keymap([base_keys(), filler(), closed(), filler()]))
+    ol.assign_layer_names(km, None)
+    km.layers[0].name, km.layers[2].name = "Base", "Gaming"
+    assert [m for _, m in ol.lint(km, ol.Labeller(km)) if TRAP in m] == [
+        "Gaming: no way to leave this layer after TG(Gaming) on Base (fine if a macro, combo, tap dance or custom code does)."
+        " In Oryx, add TO(Base) or TG(Gaming) on Gaming, or make the key that sits over TG(Gaming) transparent"
+    ]
+
+
+def test_trap_on_the_default_layer_advises_df():
+    base = base_keys()
+    base[TG2] = "DF(2)"
+    found = traps(base, filler(), closed(k0="TO(0)"), filler())
+    assert found[0].endswith("In Oryx, add DF(Layer 0) on Layer 2")
+
+
+def test_df_loop_that_never_returns_advises_df():
+    base = base_keys()
+    base[TG2] = "DF(1)"
+    found = traps(base, closed(k0="DF(2)"), closed(k0="DF(1)"), filler())
+    assert found == [
+        "Layer 1, Layer 2: no way to get back to Layer 0 from these layers (fine if a macro, combo, tap dance or custom code does)."
+        " In Oryx, add DF(Layer 0) on them"
+    ]
+
+
+def combo_keymap(base: list[str], layer2: list[str], *results: str) -> ol.Keymap:
+    combos = ", ".join(f"COMBO(combo{i}, {r})" for i, r in enumerate(results))
+    km = ol.parse_keymap(make_keymap([base, filler(), layer2, filler()]) + "\ncombo_t key_combos[] = { " + combos + " };\n")
+    ol.assign_layer_names(km, None)
+    return km
+
+
+def test_combo_counts_as_an_exit():
+    km = combo_keymap(base_keys(), closed(), "TO(0)")
+    assert not [m for _, m in ol.lint(km, ol.Labeller(km)) if TRAP in m]
+
+
+def test_trap_entered_from_a_combo_says_so():
+    base = base_keys()
+    base[TG2] = "KC_A"
+    km = combo_keymap(base, closed(), "TO(2)")
+    assert any(m.startswith("Layer 2: no way to leave this layer after TO(Layer 2) on a combo") for _, m in ol.lint(km, ol.Labeller(km)))
+
+
+def test_combo_to_a_missing_layer_is_an_error():
+    km = combo_keymap(base_keys(), filler(), "MO(9)")
+    assert ("error", "Combo: `MO(9)` points at layer 9, which does not exist") in ol.lint(km, ol.Labeller(km))
+
+
+def test_access_map_lists_combos():
+    base = base_keys()
+    base[TG2] = "KC_A"
+    km = combo_keymap(base, filler(), "OSL(2)")
+    lab = ol.Labeller(km)
+    access = {a["name"]: a["how"] for a in ol.access_map(km, lab, ol.Geometry.build({}, km))}
+    assert access["Layer 2"] == ["combo (OSL)"]
 
 
 @pytest.mark.parametrize("name", ["<!--<script", "</script>", "a&b", "x\u2028y<>"])
@@ -1017,16 +1196,22 @@ def test_read_i18n_finds_it_beside_keymap(tmp_path):
     assert ol.read_i18n(str(tmp_path / "keymap.c")) == {}
 
 
+def temp_git(repo: Path, *args: str) -> None:
+    """git in a test's throwaway repo, cut off from the host's config (signing, hooks, identity)."""
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    config = ["-c", "commit.gpgsign=false", "-c", "user.name=t", "-c", "user.email=t@example.com"]
+    subprocess.run(["git", *config, "-C", str(repo), *args], check=True, env=env)
+
+
 def test_read_i18n_at_a_git_ref(tmp_path, monkeypatch):
-    env = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    temp_git(tmp_path, "init", "-q")
     (tmp_path / "layout").mkdir()
     (tmp_path / "layout/keymap.c").write_text("")
-    subprocess.run(["git", "-C", str(tmp_path), *env, "add", "-A"], check=True)
-    subprocess.run(["git", "-C", str(tmp_path), *env, "commit", "-qm", "no i18n.h"], check=True)
+    temp_git(tmp_path, "add", "-A")
+    temp_git(tmp_path, "commit", "-qm", "no i18n.h")
     (tmp_path / "layout/i18n.h").write_text(I18N_H)
-    subprocess.run(["git", "-C", str(tmp_path), *env, "add", "-A"], check=True)
-    subprocess.run(["git", "-C", str(tmp_path), *env, "commit", "-qm", "i18n.h"], check=True)
+    temp_git(tmp_path, "add", "-A")
+    temp_git(tmp_path, "commit", "-qm", "i18n.h")
     monkeypatch.chdir(tmp_path)
     assert ol.read_i18n("HEAD:layout/keymap.c")["DE_UE"] == "KC_LBRC"
     assert ol.read_i18n("HEAD~1:layout/keymap.c") == {}
@@ -1062,7 +1247,7 @@ def test_render_cli_without_i18n_h_humanises(tmp_path):
 def i18n_history(tmp_path, monkeypatch):
     """A repo where DE_SHOUT changes meaning: no i18n.h, then `!`, then `"`, same keymap.c."""
     def git(*args: str) -> None:
-        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-C", str(tmp_path), *args], check=True)
+        temp_git(tmp_path, *args)
 
     git("init", "-q")
     layout = tmp_path / "layout"

@@ -1923,7 +1923,7 @@ def test_parse_dances_real_shape():
 
 def test_diff_tap_dance_to_dual_function_with_same_behaviour(layout_diff):
     old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_DLR", "KC_LEFT_GUI", "", "")))
-    assert layout_diff(old, FOUR_NAMES, FOUR, FOUR_NAMES) == "No keymap changes."
+    assert layout_diff(old, FOUR_NAMES, FOUR, FOUR_NAMES) == "- 1 tap dance became a dual-function key (same tap and hold; timing differs)"
 
 
 def test_diff_tap_dance_to_dual_function_with_new_behaviour(layout_diff):
@@ -1941,8 +1941,7 @@ def test_diff_tap_dance_renumber_is_no_change(layout_diff):
 def test_diff_tap_dance_body_edit_under_the_same_number(layout_diff):
     old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_EQUAL", "KC_ESCAPE", "", "")))
     new = danced("TD(DANCE_0)", dances(DANCE_0=("KC_MPLY", "KC_MNXT", "", "")))
-    out = layout_diff(old, FOUR_NAMES, new, FOUR_NAMES, "--raw")
-    assert out.startswith("- **Base** (L1.2): `=/Esc` → `") and "TD(DANCE_0)" in out
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "- **Base** (L1.2): `=/Esc` → `Play/Next`"
 
 
 def test_diff_double_hold_stays_a_dance(layout_diff):
@@ -2037,3 +2036,154 @@ def test_sync_survives_a_failing_summary_and_says_so(sync_repo, tmp_path):
     assert "warning:" in res.stderr and "summary" in res.stderr
     body = subprocess.run(["git", "-C", str(sync_repo), "log", "-1", "oryx", "--format=%B"], capture_output=True, text=True, check=True).stdout
     assert "summary unavailable" in body
+
+
+# --- diff: second review (#12) -----------------------------------------------------
+
+
+def moving_duals(layers: list[list[str]]) -> str:
+    """An export whose DUAL_FUNC_1 holds with layer_move, the layer action Oryx's dances use."""
+    return export(layers).replace("layer_on(3)", "layer_move(3)").replace("layer_off(3)", "layer_move(3)")
+
+
+def two_duals_as_dances() -> str:
+    """FOUR with both of base_keys()'s dual-function keys written as the dances they equal."""
+    keys = edited(edited(base_keys(), 14, "TD(DANCE_0)"), 41, "TD(DANCE_1)")
+    return export([keys, NAV, SYM, FUN]) + dances(DANCE_0=("KC_DLR", "KC_LEFT_GUI", "", ""), DANCE_1=("KC_RIGHT_CTRL", "layer_move(3)", "", ""))
+
+
+def test_diff_tap_dances_becoming_dual_functions_are_counted_once(layout_diff):
+    out = layout_diff(two_duals_as_dances(), FOUR_NAMES, moving_duals(FOUR), FOUR_NAMES)
+    assert out == "- 2 tap dances became dual-function keys (same tap and hold; timing differs)"
+
+
+def test_diff_dual_functions_becoming_tap_dances_are_counted_once(layout_diff):
+    out = layout_diff(moving_duals(FOUR), FOUR_NAMES, two_duals_as_dances(), FOUR_NAMES)
+    assert out == "- 2 dual-function keys became tap dances (same tap and hold; timing differs)"
+
+
+def test_diff_timing_line_survives_the_limit(layout_diff):
+    rewritten = [k.replace("KC_LEFT", "KC_HOME").replace("KC_DOWN", "KC_END") for k in NAV]
+    old = two_duals_as_dances()
+    out = layout_diff(old, FOUR_NAMES, moving_duals([base_keys(), rewritten, SYM, FUN]), FOUR_NAMES, "--limit", "1").splitlines()
+    assert out == [
+        "- 2 tap dances became dual-function keys (same tap and hold; timing differs)",
+        "- **Nav** (L0.0): `←` → `Home`",
+        "- …and 1 more key changes",
+    ]
+
+
+def test_diff_a_new_dance_with_new_behaviour_is_not_counted(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_DLR", "KC_EXLM", "", "")))
+    assert "timing" not in layout_diff(old, FOUR_NAMES, FOUR, FOUR_NAMES)
+
+
+def test_diff_renumbers_have_no_timing_line(layout_diff):
+    body = ("KC_DLR", "KC_LEFT_GUI", "", "")
+    old = danced("TD(DANCE_0)", dances(DANCE_0=body))
+    new = danced("TD(DANCE_4)", dances(DANCE_4=body))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "No keymap changes."
+    src = make_keymap(FOUR)
+    assert layout_diff(src, FOUR_NAMES, renumber_duals(src), FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_transparent_blank_before_a_blocked_blank(layout_diff):
+    """Both are blank, but the new layer isn't the KC_NO layer that was already there."""
+    old = [base_keys(), NAV, SYM, FUN, filler("KC_NO")]
+    new = [base_keys(), NAV, SYM, FUN, filler(), filler("KC_NO")]
+    assert layout_diff(old, PLAIN, new, PLAIN) == "- Layer added: **Layer 4** (position 4)"
+
+
+def test_diff_swapping_outer_layers_moves_those_two(layout_diff):
+    """Sym sits between them and never left position 2, so it isn't "moved 2 → 2"."""
+    new = export([base_to(nav=3, sym=2), FUN, SYM, NAV], 1)
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Fun", "Sym", "Nav"))
+    assert out.splitlines() == ["- Layer moved: **Fun** (position 3 → 1)", "- Layer moved: **Nav** (position 1 → 3)"]
+
+
+@pytest.mark.parametrize("key", ["TD(DANCE_0)", "LSFT(TD(DANCE_0))"])
+def test_diff_a_dance_that_presses_itself(layout_diff, key):
+    src = danced("TD(DANCE_0)", dances(DANCE_0=(key, "KC_B", "", "")))
+    assert layout_diff(src, FOUR_NAMES, src, FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_dances_that_press_each_other(layout_diff):
+    src = danced("TD(DANCE_0)", dances(DANCE_0=("TD(DANCE_1)", "KC_B", "", ""), DANCE_1=("TD(DANCE_0)", "KC_B", "", "")))
+    assert layout_diff(src, FOUR_NAMES, src, FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_a_dual_function_that_presses_itself(layout_diff):
+    src = make_keymap(FOUR).replace("register_code16(KC_DLR)", "register_code16(DUAL_FUNC_0)")
+    assert layout_diff(src, FOUR_NAMES, src, FOUR_NAMES) == "No keymap changes."
+
+
+PLAIN_DANCE = dances(DANCE_0=("KC_A", "KC_B", "", ""))
+NOT_PLAIN = {
+    "code before the switch": lambda c: c.replace("    switch (", "    my_code();\n    switch (", 1),
+    "code after the step": lambda c: c.replace("dance_step(state);", "dance_step(state); my_code();", 1),
+    "no step": lambda c: c.replace("    dance_state[0].step = dance_step(state);\n", "", 1),
+    "another step function": lambda c: c.replace("= dance_step(state)", "= my_step(state)", 1),
+    "another dance's step": lambda c: c.replace("dance_state[0].step = dance_step", "dance_state[1].step = dance_step", 1),
+    "a switch on something else": lambda c: c.replace("switch (dance_state[0].step)", "switch (other)", 1),
+    "a missing break": lambda c: c.replace("case SINGLE_TAP: register_code16(KC_A); break;", "case SINGLE_TAP: register_code16(KC_A);", 1),
+    "no double tap": lambda c: re.sub(r" *case DOUBLE_TAP:.*\n", "", c, count=1),
+    "no double single tap": lambda c: re.sub(r" *case DOUBLE_SINGLE_TAP:.*\n", "", c, count=1),
+    "a tapped hold": lambda c: c.replace("case SINGLE_HOLD: register_code16(KC_B)", "case SINGLE_HOLD: tap_code16(KC_B)", 1),
+    "a tapped tap": lambda c: c.replace("case SINGLE_TAP: register_code16(KC_A)", "case SINGLE_TAP: tap_code16(KC_A)", 1),
+    "cases out of order": lambda c: c.replace("case SINGLE_TAP:", "case X_TAP:", 1).replace("case SINGLE_HOLD:", "case SINGLE_TAP:", 1).replace("case X_TAP:", "case SINGLE_HOLD:", 1),
+}
+
+
+@pytest.mark.parametrize("name", NOT_PLAIN)
+def test_dance_code_that_is_not_plain_is_not_read(name):
+    assert ol.parse_keymap(danced("TD(DANCE_0)", PLAIN_DANCE)).dances
+    assert ol.parse_keymap(danced("TD(DANCE_0)", NOT_PLAIN[name](PLAIN_DANCE))).dances == {}
+
+
+@pytest.mark.parametrize("name", NOT_PLAIN)
+def test_diff_unread_dance_is_never_equal_to_a_plain_one(layout_diff, name):
+    old = danced("TD(DANCE_0)", PLAIN_DANCE)
+    new = danced("TD(DANCE_0)", NOT_PLAIN[name](PLAIN_DANCE))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "- **Base** (L1.2): `A/B` → `Dance 0`"
+
+
+@pytest.mark.parametrize("name", NOT_PLAIN)
+def test_diff_edit_in_an_unread_dance_is_reported(layout_diff, name):
+    old = danced("TD(DANCE_0)", NOT_PLAIN[name](PLAIN_DANCE))
+    new = danced("TD(DANCE_0)", NOT_PLAIN[name](PLAIN_DANCE).replace("KC_B", "KC_C"))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "- **Base** (L1.2): `Dance 0` → `Dance 0`  (tap dance body changed)"
+
+
+def test_diff_unread_dance_renumber_is_no_change(layout_diff):
+    broken = NOT_PLAIN["code before the switch"]
+    old = danced("TD(DANCE_0)", broken(PLAIN_DANCE))
+    new = danced("TD(DANCE_3)", broken(PLAIN_DANCE).replace("dance_state[0]", "dance_state[3]").replace("dance_0", "dance_3").replace("DANCE_0", "DANCE_3"))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_raw_flag_does_not_repeat_equal_identifiers(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_EQUAL", "KC_ESCAPE", "", "")))
+    new = danced("TD(DANCE_0)", dances(DANCE_0=("KC_EQUAL", "KC_HOME", "", "")))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES, "--raw") == "- **Base** (L1.2): `=/Esc` → `=/Home`"
+
+
+def test_diff_same_legend_same_code_gets_no_empty_suffix(layout_diff):
+    """The key is untouched, but the layer it reaches only exists now: no raw `TG(9)` → `TG(9)`."""
+    old = [edited(base_keys(), 0, "TG(4)"), NAV, SYM, FUN]
+    new = [edited(base_keys(), 0, "TG(4)"), NAV, SYM, FUN, NEW]
+    out = layout_diff(old, PLAIN, new, PLAIN)
+    assert "- **Layer 0** (L0.0): `TG Layer 4` → `TG Layer 4`" in out and "`TG(4)`" not in out
+
+
+@pytest.mark.parametrize("meta", ['{"layers": [{"position": Infinity, "title": "Nav"}]}', '{"layers": [{"position": NaN, "title": "Nav"}]}'])
+def test_diff_non_finite_position_is_ignored(layout_diff, meta):
+    out = layout_diff(FOUR, meta, [base_keys(), edited(NAV), SYM, FUN], FOUR_NAMES)
+    assert out == "- **Nav** (L0.0): `←` → `Home`"
+
+
+def test_diff_non_dict_meta_flag(tmp_path, capsys):
+    km, meta = tmp_path / "keymap.c", tmp_path / "meta.json"
+    km.write_text(make_keymap(FOUR))
+    meta.write_text("[1, 2]")
+    assert ol.main(["diff", str(km), str(km), "--meta", str(meta)]) == 0
+    assert capsys.readouterr().out.strip() == "No keymap changes."

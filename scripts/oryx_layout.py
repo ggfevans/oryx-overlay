@@ -133,6 +133,7 @@ class Keymap:
     intercepted: set[str] = field(default_factory=set)  # keys process_record_user swallows, see _intercepted()
     i18n: dict[str, str] = field(default_factory=dict)  # name -> value, from the i18n.h beside keymap.c
     dances: dict[str, tuple[str, str, str, str]] = field(default_factory=dict)  # DANCE_n -> see _parse_dance()
+    dance_code: dict[str, str] = field(default_factory=dict)  # DANCE_n -> its code, for dances that can't be read
 
     def layer_index(self, arg: str) -> int | None:
         """Layer number for a layer argument: a digit, or a name such as _LOWER."""
@@ -219,38 +220,56 @@ def _compact(kc: str) -> str:
     return "".join(kc.split())
 
 
-_DANCE_CALL = re.compile(r"\b(register_code16|tap_code16|layer_on|layer_move|layer_invert)\(\s*([^;]+?)\s*\)\s*;")
-_DANCE_STEPS = ("SINGLE_TAP", "SINGLE_HOLD", "DOUBLE_TAP", "DOUBLE_HOLD", "DOUBLE_SINGLE_TAP")
+_DANCE_CALL = re.compile(r"\b(register_code16|tap_code16|layer_move)\(\s*([^;]+?)\s*\)\s*;")
+_DANCE_PRESS = ("register_code16",)
+_DANCE_ACTION = (_DANCE_PRESS, ("layer_move",))
+# The cases of an Oryx dance, in order, and the calls each can make.
+_DANCE_STEPS = {
+    "SINGLE_TAP": (_DANCE_PRESS,),
+    "SINGLE_HOLD": _DANCE_ACTION,
+    "DOUBLE_TAP": _DANCE_ACTION + (_DANCE_PRESS * 2,),
+    "DOUBLE_HOLD": _DANCE_ACTION,
+    "DOUBLE_SINGLE_TAP": (("tap_code16", "register_code16"),),
+}
 
 
-def _parse_dance(src: str, finished: str) -> tuple[str, str, str, str] | None:
-    """(tap, hold, double tap, double hold) from Oryx's dance_N_finished. A double tap of ""
-    means two plain presses of the tap, which is what Oryx writes when none is set. None for
-    anything else: code that isn't one of these plain actions can't be compared by reading it."""
-    m = re.search(rf"\b{finished}\s*\([^)]*\)\s*\{{", src)
-    if not m:
-        return None
+def _function_body(src: str, name: str) -> str | None:
+    """A dance function's code, one-spaced, without the dance's own number: that number says
+    nothing about what it does. A dance reaching into another's state keeps the number."""
+    m = re.search(rf"\b{name}\s*\([^)]*\)\s*\{{", src)
     try:
-        body, _ = balanced(src, m.end() - 1)
-        sw = re.search(r"\bswitch\s*\([^{]*\{", body)
-        inner, end = balanced(body, sw.end() - 1) if sw else ("", 0)
+        body = balanced(src, m.end() - 1)[0] if m else ""
     except ValueError:
         return None
-    parts = re.split(r"\bcase\s+(\w+)\s*:", inner)
-    if not sw or body[end:].strip() or parts[0].strip() or len(parts) < 3:
+    return " ".join(body.replace(f"dance_state[{re.sub(r'[^0-9]', '', name)}]", "dance_state[]").split()) or None
+
+
+def _parse_dance(body: str) -> tuple[str, str, str, str] | None:
+    """(tap, hold, double tap, double hold) from the body of Oryx's dance_N_finished. A double
+    tap of "" means two plain presses of the tap, which is what Oryx writes when none is set.
+    None for anything else: code Oryx doesn't write can't be compared by reading its actions.
+    Only dance_N_finished is read: on_dance_N and dance_N_reset are generated from the same keys."""
+    m = re.fullmatch(r"dance_state\[\]\.step = dance_step\(state\); switch \(dance_state\[\]\.step\) \{(.*)\}", body)
+    if not m:
+        return None
+    parts = re.split(r"\bcase\s+(\w+)\s*:", m.group(1))
+    labels = parts[1::2]
+    if parts[0].strip() or not {"SINGLE_TAP", "DOUBLE_TAP", "DOUBLE_SINGLE_TAP"} <= set(labels):
+        return None
+    if labels != [step for step in _DANCE_STEPS if step in labels]:
         return None
     cases: dict[str, list[str]] = {}
-    for label, code in zip(parts[1::2], parts[2::2]):
-        if label not in _DANCE_STEPS or _DANCE_CALL.sub("", code).replace("break;", "").strip():
+    for label, code in zip(labels, parts[2::2]):
+        calls = _DANCE_CALL.findall(code)
+        ending = "" if label == labels[-1] else "break;"
+        if tuple(fn for fn, _ in calls) not in _DANCE_STEPS[label] or _DANCE_CALL.sub("", code).strip() != ending:
             return None
-        cases[label] = [arg if fn.endswith("code16") else f"{_LAYER_CALLS[fn]}({arg})" for fn, arg in _DANCE_CALL.findall(code)]
-    tap, hold, double_hold = (cases.get(step, [""]) for step in ("SINGLE_TAP", "SINGLE_HOLD", "DOUBLE_HOLD"))
-    double = cases.get("DOUBLE_TAP", tap + tap)
-    if not all(len(steps) == 1 for steps in (tap, hold, double_hold)) or cases.get("DOUBLE_SINGLE_TAP", tap + tap) != tap + tap:
+        cases[label] = [arg if fn.endswith("code16") else f"{_LAYER_CALLS[fn]}({arg})" for fn, arg in calls]
+    tap = cases["SINGLE_TAP"]
+    double = cases["DOUBLE_TAP"]
+    if cases["DOUBLE_SINGLE_TAP"] != tap + tap or (len(double) == 2 and double != tap + tap):
         return None
-    if double != tap + tap and len(double) != 1:
-        return None
-    return tap[0], hold[0], "" if double == tap + tap else double[0], double_hold[0]
+    return tap[0], cases.get("SINGLE_HOLD", [""])[0], "" if double == tap + tap else double[0], cases.get("DOUBLE_HOLD", [""])[0]
 
 
 def parse_keymap(text: str) -> Keymap:
@@ -320,22 +339,25 @@ def parse_keymap(text: str) -> Keymap:
     km = Keymap(layout_macro=layout_macro, layers=layers, row_sizes=row_sizes, defines=defines, dual_funcs=dual, ledmap=ledmap, tri_layers=tri, combos=combos)
     km.intercepted = {_compact(km.resolve(label)) for label in _intercepted(src)}
     for m in re.finditer(r"\[\s*(\w+)\s*\]\s*=\s*ACTION_TAP_DANCE_FN_ADVANCED\(\s*\w+\s*,\s*(\w+)\s*,", src):
-        dance = _parse_dance(src, m.group(2))
+        body = _function_body(src, m.group(2))
+        dance = _parse_dance(body) if body else None
         if dance:
             km.dances[m.group(1)] = dance
+        elif body:
+            km.dance_code[m.group(1)] = body
     return km
 
 
 def layer_entries(meta: dict | None) -> list[tuple[int, str]]:
     """(position, title) for the well-formed `layers` entries in Oryx metadata."""
-    entries = (meta or {}).get("layers")
+    entries = meta.get("layers") if isinstance(meta, dict) else None
     out = []
     for entry in entries if isinstance(entries, list) else []:
         title = entry.get("title") or "" if isinstance(entry, dict) else None
         try:
             if isinstance(title, str):
                 out.append((int(entry["position"]), title.strip()))
-        except (KeyError, TypeError, ValueError):
+        except (KeyError, OverflowError, TypeError, ValueError):
             pass
     return out
 
@@ -568,6 +590,7 @@ class Labeller:
         self.mods = MOD_TEXT[style]
         self.names = {l.index: l.name or f"Layer {l.index}" for l in km.layers}
         self.i18n = i18n_legends(km.i18n)
+        self.expanding: set[str] = set()  # dual-function keys being drawn, in case one presses itself
 
     def layer(self, arg: str) -> str:
         idx = self.km.layer_index(arg)
@@ -642,8 +665,12 @@ class Labeller:
             return Legend(kind="trans")
         if kc in ("KC_NO", "XXXXXXX"):
             return Legend(kind="none")
-        if kc in self.km.dual_funcs:
-            return self.tap_hold(*self.km.dual_funcs[kc])
+        if kc in self.km.dual_funcs and kc not in self.expanding:
+            self.expanding.add(kc)
+            try:
+                return self.tap_hold(*self.km.dual_funcs[kc])
+            finally:
+                self.expanding.discard(kc)
         kc = self.km.resolve(kc)
         c = call(kc)
         if c is None:
@@ -1470,19 +1497,21 @@ def cmd_render(args) -> int:
     return 0
 
 
-def behaviour(lab: Labeller, raw: str, layer_id=lambda idx: "layer") -> str:
+def behaviour(lab: Labeller, raw: str, layer_id=lambda idx: "layer", seen: frozenset = frozenset()) -> str:
     """What a key does, comparable between revisions. A DUAL_FUNC_n becomes its tap and hold,
     so renumbering the defines changes nothing. So does a TD(DANCE_n) with no double tap or
     double hold of its own, which is the same key: Oryx writes a tap-hold either way. Other
     dances go by their actions, so their number means nothing either. `layer_id` says which
     layer a layer key means; the default treats all layers alike, for comparing content
-    before layers are paired."""
+    before layers are paired. `seen` stops a key that presses itself."""
     km = lab.km
+    kc = raw.strip()
+    if kc in seen:
+        return _compact(kc)
 
     def parts(fn: str, *keys: str) -> str:
-        return f"{fn}({','.join(behaviour(lab, key, layer_id) for key in keys)})"
+        return f"{fn}({','.join(behaviour(lab, key, layer_id, seen | {kc}) for key in keys)})"
 
-    kc = raw.strip()
     if kc in km.dual_funcs:
         return parts("DUAL", *km.dual_funcs[kc])
     dance = km.dance(kc)
@@ -1497,11 +1526,13 @@ def behaviour(lab: Labeller, raw: str, layer_id=lambda idx: "layer") -> str:
     if c is None:
         return "|".join(sorted(_compact(mod) for mod in kc.split("|"))) if "|" in kc else lab.locale(kc) or _compact(kc)
     fn, args = c
+    if fn == "TD" and len(args) == 1 and args[0] in km.dance_code:
+        return f"TD({km.dance_code[args[0]]})"
     head = []
     if is_layer_call(fn, args):
         idx = km.layer_index(args[0])
         head, args = [_compact(args[0]) if idx is None else str(layer_id(idx))], args[1:]
-    return f"{fn}({','.join(head + [behaviour(lab, arg, layer_id) for arg in args])})"
+    return f"{fn}({','.join(head + [behaviour(lab, arg, layer_id, seen) for arg in args])})"
 
 
 def pair_layers(old: Keymap, new: Keymap, lo: Labeller, ln: Labeller) -> dict[int, int]:
@@ -1510,9 +1541,9 @@ def pair_layers(old: Keymap, new: Keymap, lo: Labeller, ln: Labeller) -> dict[in
 
     First the layers that can only be one thing: keys found once on each side, then a name
     left once on each side. Those that stayed in order fence off gaps, and identical layers
-    (blanks, copies) pair inside a gap, in order, the same name and then the same position
-    breaking ties: a new blank layer is not the old blank further along. What is left goes to
-    the best of these, ties in layer order:
+    (blanks, copies) pair inside a gap, in order, the same keycodes, then the same name, then
+    the same position breaking ties: a new blank layer is not the old blank further along.
+    What is left goes to the best of these, ties in layer order:
 
       0. same content and same name
       1. same content, not blank (a rename)
@@ -1554,13 +1585,14 @@ def pair_layers(old: Keymap, new: Keymap, lo: Labeller, ln: Labeller) -> dict[in
 
     def align(olds: list[Layer], news: list[Layer]) -> list[tuple[int, int]]:
         """The longest in-order matching of identical layers."""
-        best = [[((0, 0, 0), [])] * (len(news) + 1) for _ in range(len(olds) + 1)]
+        best = [[((0, 0, 0, 0), [])] * (len(news) + 1) for _ in range(len(olds) + 1)]
         for i, o in enumerate(olds, 1):
             for j, n in enumerate(news, 1):
                 options = [best[i - 1][j], best[i][j - 1]]
                 if identical(o, n):
-                    (count, names, places), matched = best[i - 1][j - 1]
-                    options.append(((count + 1, names + (o.title == n.title), places + (o.index == n.index)), matched + [(o.index, n.index)]))
+                    (count, keys, names, places), matched = best[i - 1][j - 1]
+                    score = (count + 1, keys + (o.keys == n.keys), names + (o.title == n.title), places + (o.index == n.index))
+                    options.append((score, matched + [(o.index, n.index)]))
                 best[i][j] = max(options, key=lambda option: option[0])
         return best[-1][-1][1]
 
@@ -1602,13 +1634,18 @@ def pair_layers(old: Keymap, new: Keymap, lo: Labeller, ln: Labeller) -> dict[in
 
 
 def moved_layers(pairs: dict[int, int]) -> set[int]:
-    """Old indices of the layers that changed order: all but the longest run still in order.
-    So an insert moves nothing, and a layer dragged past others is the only one that moved."""
+    """Old indices of the layers that changed order: all but the longest run still in order,
+    or the run leaving most layers where they were when there are several. So an insert moves
+    nothing, and a layer dragged past others is the only one that moved."""
+
+    def size(run: list[int]) -> tuple[int, int]:
+        return len(run), sum(pairs[oi] == oi for oi in run)
+
     olds = [oi for oi, _ in sorted(pairs.items(), key=lambda p: p[1])]
     runs: list[list[int]] = []
     for oi in olds:
-        runs.append(max((r for r in runs if r[-1] < oi), key=len, default=[]) + [oi])
-    return set(olds) - set(max(runs, key=len, default=[]))
+        runs.append(max((r for r in runs if r[-1] < oi), key=size, default=[]) + [oi])
+    return set(olds) - set(max(runs, key=size, default=[]))
 
 
 def cmd_diff(args) -> int:
@@ -1642,7 +1679,7 @@ def cmd_diff(args) -> int:
             lines.append(f"- Layer renamed: **{o.name}** → **{n.name}**")
     moved = moved_layers(pairs)
     for oi, ni in survivors:
-        if oi in moved:
+        if oi in moved and oi != ni:
             lines.append(f"- Layer moved: **{news[ni].name}** (position {oi} → {ni})")
 
     # Layer keys on the old side read as what those layers are called now, and compare by
@@ -1656,13 +1693,29 @@ def cmd_diff(args) -> int:
     def new_layer(idx: int) -> str:
         return f"@{idx}" if idx in news else f"?{idx}"
 
+    def is_dual(km: Keymap, raw: str) -> bool:
+        return raw.strip() in km.dual_funcs
+
+    def note(a: str, b: str, same_legend: bool) -> str:
+        if a != b:
+            return f"  (`{a}` → `{b}`)" if args.raw or same_legend else ""
+        return "  (tap dance body changed)" if same_legend and old.dance(a) is None and "TD(" in old.resolve(a) else ""
+
     keys: list[str] = []
+    to_dual = to_dance = 0  # same actions, other mechanism: only worth one line
     for oi, ni in survivors:
         for ki, (a, b) in enumerate(zip(olds[oi].keys, news[ni].keys)):
             if behaviour(lo, a, old_layer) != behaviour(ln, b, new_layer):
                 la, lb = lo.spelled_out(a), ln.spelled_out(b)
                 where = geo.pos.get(ki, f"#{ki}")
-                keys.append(f"- **{news[ni].name}** ({where}): `{la}` → `{lb}`" + (f"  (`{a}` → `{b}`)" if args.raw or la == lb else ""))
+                keys.append(f"- **{news[ni].name}** ({where}): `{la}` → `{lb}`" + note(a, b, la == lb))
+            else:
+                to_dual += bool(old.dance(a)) and is_dual(new, b)
+                to_dance += is_dual(old, a) and bool(new.dance(b))
+    if to_dual:
+        lines.append(f"- {to_dual} tap dance{'s' * (to_dual > 1)} became {'dual-function keys' if to_dual > 1 else 'a dual-function key'} (same tap and hold; timing differs)")
+    if to_dance:
+        lines.append(f"- {to_dance} dual-function key{'s' * (to_dance > 1)} became {'tap dances' if to_dance > 1 else 'a tap dance'} (same tap and hold; timing differs)")
     if args.limit and len(keys) > args.limit:
         keys[args.limit :] = [f"- …and {len(keys) - args.limit} more key changes"]
     lines += keys

@@ -2130,6 +2130,7 @@ NOT_PLAIN = {
     "no double single tap": lambda c: re.sub(r" *case DOUBLE_SINGLE_TAP:.*\n", "", c, count=1),
     "a tapped hold": lambda c: c.replace("case SINGLE_HOLD: register_code16(KC_B)", "case SINGLE_HOLD: tap_code16(KC_B)", 1),
     "a tapped tap": lambda c: c.replace("case SINGLE_TAP: register_code16(KC_A)", "case SINGLE_TAP: tap_code16(KC_A)", 1),
+    "a call hidden in an argument": lambda c: c.replace("case SINGLE_HOLD: register_code16(KC_B);", "case SINGLE_HOLD: register_code16(KC_B), my_code();", 1),
     "cases out of order": lambda c: c.replace("case SINGLE_TAP:", "case X_TAP:", 1).replace("case SINGLE_HOLD:", "case SINGLE_TAP:", 1).replace("case X_TAP:", "case SINGLE_HOLD:", 1),
 }
 
@@ -2187,3 +2188,69 @@ def test_diff_non_dict_meta_flag(tmp_path, capsys):
     meta.write_text("[1, 2]")
     assert ol.main(["diff", str(km), str(km), "--meta", str(meta)]) == 0
     assert capsys.readouterr().out.strip() == "No keymap changes."
+
+
+# --- keys that press themselves, in lint and render (#12) ---------------------------
+
+SELF_PRESSING = {
+    "tap": lambda src: src.replace("register_code16(KC_DLR)", "register_code16(DUAL_FUNC_0)"),
+    "hold": lambda src: src.replace("register_code16(KC_LEFT_GUI)", "register_code16(DUAL_FUNC_0)"),
+    "each other": lambda src: src.replace("register_code16(KC_DLR)", "register_code16(DUAL_FUNC_1)").replace("register_code16(KC_RIGHT_CTRL)", "register_code16(DUAL_FUNC_0)"),
+}
+
+
+@pytest.mark.parametrize("how", SELF_PRESSING)
+def test_lint_survives_a_dual_function_that_presses_itself(tmp_path, how):
+    km = tmp_path / "keymap.c"
+    km.write_text(SELF_PRESSING[how](make_keymap(FOUR)))
+    assert ol.main(["lint", "--keymap", str(km), "--meta", "/x"]) in (0, 1)
+
+
+@pytest.mark.parametrize("how", SELF_PRESSING)
+def test_render_survives_a_dual_function_that_presses_itself(tmp_path, how):
+    km = tmp_path / "keymap.c"
+    km.write_text(SELF_PRESSING[how](make_keymap(FOUR)))
+    assert ol.main(["render", "--keymap", str(km), "--meta", "/x", "--out", str(tmp_path / "docs"), "--no-svg"]) == 0
+    assert (tmp_path / "docs/keymap.md").exists()
+
+
+@pytest.mark.parametrize("how", SELF_PRESSING)
+def test_diff_survives_a_dual_function_that_presses_itself(layout_diff, how):
+    src = SELF_PRESSING[how](make_keymap(FOUR))
+    assert layout_diff(src, FOUR_NAMES, src, FOUR_NAMES) == "No keymap changes."
+
+
+def test_targets_still_follow_a_dual_function_hold(four_layers):
+    assert ol.Labeller(four_layers).targets("DUAL_FUNC_1") == [("MO", 3)]
+
+
+def test_render_non_dict_meta(tmp_path):
+    km, meta = tmp_path / "keymap.c", tmp_path / "meta.json"
+    km.write_text(make_keymap(FOUR))
+    meta.write_text("[1, 2]")
+    assert ol.main(["render", "--keymap", str(km), "--meta", str(meta), "--out", str(tmp_path / "docs"), "--no-svg"]) == 0
+
+
+def test_diff_dance_body_change_with_equal_legends_says_so(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_1", "KC_LSFT", "", "")))
+    new = danced("TD(DANCE_0)", dances(DANCE_0=("KC_1", "KC_RSFT", "", "")))
+    expected = "- **Base** (L1.2): `1/Shift` → `1/Shift`  (tap dance body changed)"
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == expected
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES, "--raw") == expected
+
+
+def test_diff_dual_function_body_change_with_equal_legends_says_so(layout_diff):
+    old = export(FOUR).replace("KC_LEFT_GUI", "KC_LSFT")
+    new = export(FOUR).replace("KC_LEFT_GUI", "KC_RSFT")
+    expected = "- **Base** (L1.2): `$/Shift` → `$/Shift`  (dual-function body changed)"
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == expected
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES, "--raw") == expected
+
+
+def test_diff_renumbered_body_change_with_equal_legends_says_so(layout_diff):
+    old = export(FOUR).replace("KC_LEFT_GUI", "KC_LSFT")
+    new = renumber_duals(export(FOUR).replace("KC_LEFT_GUI", "KC_RSFT"))
+    out = layout_diff(old, FOUR_NAMES, new, FOUR_NAMES)
+    assert out == "- **Base** (L1.2): `$/Shift` → `$/Shift`  (dual-function body changed)"
+    with_raw = layout_diff(old, FOUR_NAMES, new, FOUR_NAMES, "--raw")
+    assert with_raw == "- **Base** (L1.2): `$/Shift` → `$/Shift`  (`DUAL_FUNC_0` → `DUAL_FUNC_1`)  (dual-function body changed)"

@@ -37,7 +37,7 @@ user changed in Oryx on top of the repo's own edits.
    - What changed in Oryx: `make diff REF=HEAD~1` if the merge was a single commit,
      or `git log -1 oryx --format=%B` (the sync commit body lists layers added, removed, renamed or moved, a count of tap
      dances and dual-function keys that swapped mechanism, then key-level changes, up to
-     60, with a count of any it left out). Keys compare by actions, not timing..
+     60, with a count of any it left out). Keys compare by actions, not timing.
    - Any new warnings in the `## Checks` section of `docs/keymap.md`.
    - The firmware path in `build/`. The user flashes it with Keymapp; never flash.
    - If `qmk_version` in `layout/.oryx.json` changed, say so: Oryx moved to a new

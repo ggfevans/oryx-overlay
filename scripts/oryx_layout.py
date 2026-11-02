@@ -233,6 +233,16 @@ _DANCE_STEPS = {
 }
 
 
+def _single_arg(arg: str) -> bool:
+    """One argument: `KC_B), my_code(` is what a greedy match makes of a second statement."""
+    depth = 0
+    for ch in arg:
+        depth += (ch == "(") - (ch == ")")
+        if depth < 0 or (ch == "," and depth == 0):
+            return False
+    return depth == 0
+
+
 def _function_body(src: str, name: str) -> str | None:
     """A dance function's code, one-spaced, without the dance's own number: that number says
     nothing about what it does. A dance reaching into another's state keeps the number."""
@@ -263,6 +273,8 @@ def _parse_dance(body: str) -> tuple[str, str, str, str] | None:
         calls = _DANCE_CALL.findall(code)
         ending = "" if label == labels[-1] else "break;"
         if tuple(fn for fn, _ in calls) not in _DANCE_STEPS[label] or _DANCE_CALL.sub("", code).strip() != ending:
+            return None
+        if not all(_single_arg(arg) for _, arg in calls):
             return None
         cases[label] = [arg if fn.endswith("code16") else f"{_LAYER_CALLS[fn]}({arg})" for fn, arg in calls]
     tap = cases["SINGLE_TAP"]
@@ -707,11 +719,13 @@ class Labeller:
             return Legend(f"{prefix}{sep}{self.legend(inner).text()}")
         return Legend(kc.replace("_", " "), "", "special")
 
-    def targets(self, raw: str) -> list[tuple[str, int]]:
+    def targets(self, raw: str, seen: frozenset = frozenset()) -> list[tuple[str, int]]:
         """Layer-changing behaviour of a key: [(func, layer index)]."""
         raw = raw.strip()
         if raw in self.km.dual_funcs:
-            return [t for part in self.km.dual_funcs[raw] if part for t in self.targets(part)]
+            if raw in seen:  # it presses itself
+                return []
+            return [t for part in self.km.dual_funcs[raw] if part for t in self.targets(part, seen | {raw})]
         if raw.startswith("DUAL_FUNC_"):
             return []  # unparsed Oryx dual function: its LT() layer is a dummy
         kc = self.km.resolve(raw)
@@ -1250,7 +1264,8 @@ def read_source(spec: str) -> str:
 
 def load_json(path: str | None) -> dict:
     if path and Path(path).exists():
-        return json.loads(Path(path).read_text(encoding="utf-8"))
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
     return {}
 
 
@@ -1696,10 +1711,14 @@ def cmd_diff(args) -> int:
     def is_dual(km: Keymap, raw: str) -> bool:
         return raw.strip() in km.dual_funcs
 
+    def body_kind(km: Keymap, raw: str) -> str:
+        """Keys whose code holds what they do, so two can differ with nothing to show for it."""
+        return "tap dance" if "TD(" in km.resolve(raw) else "dual-function" if raw.startswith("DUAL_FUNC_") else ""
+
     def note(a: str, b: str, same_legend: bool) -> str:
-        if a != b:
-            return f"  (`{a}` → `{b}`)" if args.raw or same_legend else ""
-        return "  (tap dance body changed)" if same_legend and old.dance(a) is None and "TD(" in old.resolve(a) else ""
+        kind = body_kind(old, a) if same_legend and body_kind(old, a) == body_kind(new, b) else ""
+        raw = f"  (`{a}` → `{b}`)" if a != b and (args.raw or (same_legend and not kind)) else ""
+        return raw + (f"  ({kind} body changed)" if kind else "")
 
     keys: list[str] = []
     to_dual = to_dance = 0  # same actions, other mechanism: only worth one line

@@ -34,7 +34,7 @@ Positions like `L2.3` mean left half, row 2, fourth key from the left in that ha
 make sync      # fetch the latest Oryx export onto the oryx branch and merge it here
 make build     # compile firmware into build/, then redraw docs/
 make render    # redraw docs/ only
-make diff REF=HEAD~1   # key-level changes to the layout since REF
+make diff REF=HEAD~1   # layer and key-level changes to the layout since REF
 make lint      # unreachable layers, dangling layer keys, layers you can't leave
 make test      # tooling unit tests
 make self-update [TO=v0.2.0]   # merge a newer template release into the tooling (left uncommitted)

@@ -3,7 +3,8 @@
 
 Subcommands:
   render  keymap.c + keyboard info -> docs/keymap.md, keymap.yaml, keymap.svg
-  diff    key-by-key changes between two keymap.c versions (files or git refs)
+  diff    layers added, removed, renamed or moved, and key-by-key changes, between
+          two keymap.c versions (files or git refs)
   lint    sanity checks: unreachable layers, dangling layer keys, traps
   parse   dump the parsed keymap as JSON (debugging)
 
@@ -115,7 +116,8 @@ class Layer:
     index: int
     ident: str
     keys: list[str]
-    name: str = ""
+    name: str = ""  # always set, unique, and may depend on the position
+    title: str = ""  # what it is called in Oryx; "" when unnamed, so it doesn't shift with position
 
 
 @dataclass
@@ -289,7 +291,8 @@ def assign_layer_names(km: Keymap, meta: dict | None) -> None:
             titles[int(entry.get("position", -1))] = title
     seen: set[str] = set()
     for layer in km.layers:
-        name = titles.get(layer.index) or (layer.ident if not layer.ident.isdigit() else f"Layer {layer.index}")
+        layer.title = titles.get(layer.index) or ("" if layer.ident.isdigit() else layer.ident)
+        name = layer.title or f"Layer {layer.index}"
         if name in seen:
             name = f"{name} {layer.index}"
         seen.add(name)
@@ -416,6 +419,16 @@ def read_i18n(keymap: str) -> dict[str, str]:
         return {}
 
 
+def read_meta(keymap: str) -> dict:
+    """The .oryx.json beside a keymap.c path or REF:path; old revisions may have none."""
+    ref, sep, path = keymap.rpartition(":")
+    try:
+        meta = json.loads(read_source(f"{ref}{sep}{Path(path).with_name('.oryx.json')}"))
+    except (SystemExit, OSError, ValueError):
+        return {}
+    return meta if isinstance(meta, dict) else {}
+
+
 def i18n_legends(i18n: dict[str, str]) -> dict[str, str]:
     """Legends for an i18n.h. Oryx has its own names, so go by each define's value, in
     the header of that prefix that agrees best with what the names say (FR_ is four
@@ -488,6 +501,11 @@ LAYER_FUNCS = {
     "OSL": ("one-shot", "Next key only on {0}."),
     "DF": ("default", "Sets {0} as the default layer."),
 }
+
+
+def is_layer_call(fn: str, args: list[str]) -> bool:
+    """A key function whose first argument is a layer."""
+    return (fn in LAYER_FUNCS and len(args) == 1) or (fn in ("LT", "LM") and len(args) == 2)
 
 
 class Labeller:
@@ -603,7 +621,7 @@ class Labeller:
         if not c or _compact(kc) in self.km.intercepted:
             return []
         fn, args = c
-        if (fn in LAYER_FUNCS and len(args) == 1) or (fn in ("LT", "LM") and len(args) == 2):
+        if is_layer_call(fn, args):
             idx = self.km.layer_index(args[0])
             if idx is not None:
                 return [(fn, idx)]
@@ -1381,33 +1399,149 @@ def cmd_render(args) -> int:
     return 0
 
 
+def behaviour(lab: Labeller, raw: str, layer_id=lambda idx: "layer") -> str:
+    """What a key does, comparable between revisions. A DUAL_FUNC_n becomes its tap and hold,
+    so renumbering the defines changes nothing, and `layer_id` says which layer a layer key
+    means. The default treats all layers alike, for comparing content before layers are paired."""
+    km = lab.km
+    kc = raw.strip()
+    if kc in km.dual_funcs:
+        return f"DUAL({','.join(behaviour(lab, part, layer_id) for part in km.dual_funcs[kc])})"
+    unparsed_dual = kc.startswith("DUAL_FUNC_")
+    kc = km.resolve(kc)
+    if unparsed_dual or _compact(kc) in km.intercepted:  # any layer in there is a dummy
+        return _compact(kc)
+    c = call(kc)
+    if c is None:
+        return lab.i18n.get(kc, kc)
+    fn, args = c
+    head = []
+    if is_layer_call(fn, args):
+        idx = km.layer_index(args[0])
+        head, args = [_compact(args[0]) if idx is None else str(layer_id(idx))], args[1:]
+    return f"{fn}({','.join(head + [behaviour(lab, arg, layer_id) for arg in args])})"
+
+
+def pair_layers(old: Keymap, new: Keymap, lo: Labeller, ln: Labeller) -> dict[int, int]:
+    """Which new layer each old layer became: {old index: new index}. The rest were removed
+    or added. A candidate pair's rank, best first, and the best still free wins:
+
+      0. same content and same name
+      1. same content, not blank (a rename; a name that moved to other keys doesn't count)
+      2. same name, the closest match first when a name is used twice
+      3. similar: over half of the positions that hold a key on either side match
+      4. same position, unless both sides are named and differ in keys (a replacement)
+
+    A blank key counts for nothing, or all sparse layers would look alike. Fallback names
+    such as "Layer 3" are positions, so only Oryx names count. Ties go in layer order, which
+    keeps identical layers in order.
+    """
+
+    def content(lab: Labeller, layer: Layer) -> list[str]:
+        return ["" if lab.legend(k).kind in ("trans", "none") else behaviour(lab, k) for k in layer.keys]
+
+    def rank(o: Layer, n: Layer) -> tuple[int, float] | None:
+        a, b = before[o.index], after[n.index]
+        same_name = o.title == n.title
+        used = sum(1 for x, y in zip(a, b) if x or y)
+        share = sum(1 for x, y in zip(a, b) if (x or y) and x == y) / used if used else 0
+        if a == b:
+            if same_name:
+                return 0, 1
+            if any(a):
+                return 1, 1
+        if same_name and o.title:
+            return 2, share
+        if share > 0.5:
+            return 3, share
+        if o.index == n.index and (a == b or not (o.title and n.title)):
+            return 4, 0
+        return None
+
+    before = {l.index: content(lo, l) for l in old.layers}
+    after = {l.index: content(ln, l) for l in new.layers}
+    candidates = []
+    for o in old.layers:
+        for n in new.layers:
+            r = rank(o, n)
+            if r:
+                candidates.append((r[0], -r[1], o.index, n.index))
+    pairs: dict[int, int] = {}
+    for _, _, oi, ni in sorted(candidates):
+        if oi not in pairs and ni not in pairs.values():
+            pairs[oi] = ni
+    return pairs
+
+
+def moved_layers(pairs: dict[int, int]) -> set[int]:
+    """Old indices of the layers that changed order: all but the longest run still in order.
+    So an insert moves nothing, and a layer dragged past others is the only one that moved."""
+    olds = [oi for oi, _ in sorted(pairs.items(), key=lambda p: p[1])]
+    runs: list[list[int]] = []
+    for oi in olds:
+        runs.append(max((r for r in runs if r[-1] < oi), key=len, default=[]) + [oi])
+    return set(olds) - set(max(runs, key=len, default=[]))
+
+
 def cmd_diff(args) -> int:
     old = parse_keymap(read_source(args.old))
     new = parse_keymap(read_source(args.new))
     old.i18n, new.i18n = read_i18n(args.old), read_i18n(args.new)
-    meta = load_json(args.meta)
-    assign_layer_names(old, meta)
-    assign_layer_names(new, meta)
+    # --meta describes the working tree. Each git revision, and an old file, has its own names.
+    old_meta = read_meta(args.old)
+    new_is_ref = ":" in args.new and not Path(args.new).exists()
+    new_meta = read_meta(args.new) if new_is_ref else load_json(args.meta)
+    assign_layer_names(old, old_meta)
+    assign_layer_names(new, new_meta)
     info = load_json(args.info)
     geo = Geometry.build(info, new)
     lo, ln = Labeller(old, args.style), Labeller(new, args.style)
-    olds = {l.index: l for l in old.layers}
+    olds, news = {l.index: l for l in old.layers}, {l.index: l for l in new.layers}
+    pairs = pair_layers(old, new, lo, ln)
+    survivors = sorted(pairs.items(), key=lambda p: p[1])
+
     lines: list[str] = []
     for layer in new.layers:
-        prev = olds.pop(layer.index, None)
-        if prev is None:
-            lines.append(f"- **{layer.name}**: new layer")
-            continue
-        for ki, (a, b) in enumerate(zip(prev.keys, layer.keys)):
-            la, lb = lo.legend(a).text(), ln.legend(b).text()
-            if a != b or la != lb:
+        if layer.index not in pairs.values():
+            lines.append(f"- Layer added: **{layer.name}** (position {layer.index})")
+    for layer in old.layers:
+        if layer.index not in pairs:
+            lines.append(f"- Layer removed: **{layer.name}** (position {layer.index})")
+    for oi, ni in survivors:
+        o, n = olds[oi], news[ni]
+        # Without old names there is no telling a new name from a rename.
+        if o.title != n.title and (o.title or old_meta.get("layers")):
+            lines.append(f"- Layer renamed: **{o.name}** → **{n.name}**")
+    moved = moved_layers(pairs)
+    for oi, ni in survivors:
+        if oi in moved:
+            lines.append(f"- Layer moved: **{news[ni].name}** (position {oi} → {ni})")
+
+    # Layer keys on the old side read as what those layers are called now, and compare by
+    # which layer they mean: TG(2) -> TG(3) is no change when the layer itself moved there.
+    for oi in olds:
+        lo.names[oi] = ln.names[pairs[oi]] if oi in pairs else f"{lo.names[oi]} (removed)"
+
+    def old_layer(idx: int) -> str:
+        return f"@{pairs[idx]}" if idx in pairs else (f"removed {idx}" if idx in olds else f"?{idx}")
+
+    def new_layer(idx: int) -> str:
+        return f"@{idx}" if idx in news else f"?{idx}"
+
+    keys: list[str] = []
+    for oi, ni in survivors:
+        for ki, (a, b) in enumerate(zip(olds[oi].keys, news[ni].keys)):
+            if behaviour(lo, a, old_layer) != behaviour(ln, b, new_layer):
+                la, lb = lo.legend(a).text(), ln.legend(b).text()
                 where = geo.pos.get(ki, f"#{ki}")
-                lines.append(f"- **{layer.name}** ({where}): `{la}` → `{lb}`" + (f"  (`{a}` → `{b}`)" if args.raw else ""))
-    for layer in olds.values():
-        lines.append(f"- **{layer.name}**: layer removed")
-    if old.ledmap != new.ledmap:
-        changed = sorted(set(old.ledmap) ^ set(new.ledmap) | {k for k in old.ledmap if old.ledmap.get(k) != new.ledmap.get(k)})
-        lines.append(f"- LED colours changed on layer(s) {', '.join(str(c) for c in changed)}")
+                keys.append(f"- **{news[ni].name}** ({where}): `{la}` → `{lb}`" + (f"  (`{a}` → `{b}`)" if args.raw or la == lb else ""))
+    if args.limit and len(keys) > args.limit:
+        keys[args.limit :] = [f"- …and {len(keys) - args.limit} more key changes"]
+    lines += keys
+
+    lit = [news[ni].name for oi, ni in survivors if old.ledmap.get(oi) != new.ledmap.get(ni)]
+    if lit:
+        lines.append(f"- LED colours changed on layer(s) {', '.join(lit)}")
     print("\n".join(lines) if lines else "No keymap changes.")
     return 0
 
@@ -1451,6 +1585,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("old", help="path or git REF:path, e.g. HEAD~1:layout/keymap.c")
     p.add_argument("new", nargs="?", default="layout/keymap.c")
     p.add_argument("--raw", action="store_true", help="also show raw keycodes")
+    p.add_argument("--limit", type=int, default=0, metavar="N", help="list at most N key changes (layer changes are always listed)")
     common(p, keymap=False)
     p.set_defaults(func=cmd_diff)
 

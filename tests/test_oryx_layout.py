@@ -403,7 +403,7 @@ def test_diff_cli(tmp_path, capsys):
     ol.main(["diff", str(old), str(new), "--meta", "/nonexistent", "--info", "/nonexistent"])
     out = capsys.readouterr().out
     assert "- **Layer 0** (L0.1): `W` → `P`" in out
-    assert "- **Layer 2**: new layer" in out
+    assert "- Layer added: **Layer 2** (position 2)" in out
 
 
 def test_render_cli_text_only(tmp_path, capsys):
@@ -1449,3 +1449,394 @@ def test_locale_table_matches_the_pinned_tree():
             if name in fresh.get(prefix, {}):
                 assert fresh[prefix][name] == legend, f"{prefix}_{name}: run scripts/gen_locale_legends.py"
     assert gen.layouts(QMK_TREE / "quantum" / "keymap_extras").keys() >= ol.LAYOUTS.keys()
+
+
+# --- diff: pairing layers across revisions (#12) ---------------------------------
+
+NAV = filler()
+NAV[:4] = ["KC_LEFT", "KC_DOWN", "KC_UP", "KC_RIGHT"]
+SYM = filler()
+SYM[:4] = ["KC_EXLM", "KC_AT", "KC_HASH", "KC_DLR"]
+FUN = filler()
+FUN[:4] = ["KC_F1", "KC_F2", "KC_F3", "KC_F4"]
+NEW = filler()
+NEW[:4] = ["KC_1", "KC_2", "KC_3", "KC_4"]
+
+
+def titles(*names: str) -> dict:
+    return {"layers": [{"position": i, "title": name} for i, name in enumerate(names)]}
+
+
+def edited(keys: list[str], at: int = 0, to: str = "KC_HOME") -> list[str]:
+    keys = list(keys)
+    keys[at] = to
+    return keys
+
+
+def base_to(nav: int | None = 1, sym: int = 2) -> list[str]:
+    """base_keys() with its LT to Nav and TG to Sym pointing where those layers are now."""
+    keys = base_keys()
+    keys[40] = f"LT({nav}, KC_SPACE)" if nav is not None else "KC_SPACE"
+    keys[48] = f"TG({sym})"
+    return keys
+
+
+def dual_hold_to(src: str, layer: int) -> str:
+    """Point DUAL_FUNC_1's hold, `layer_on(3)` in KEYMAP_C, at another layer."""
+    return src.replace("layer_on(3)", f"layer_on({layer})").replace("layer_off(3)", f"layer_off({layer})")
+
+
+def export(layers: list[list[str]], hold: int = 3) -> str:
+    """A keymap.c with no lights (KEYMAP_C's stay on layer 1 wherever layers go) and DUAL_FUNC_1 holding `hold`."""
+    return dual_hold_to(make_keymap(layers).replace("[1] = { {0,255,255}, {85,255,255}, {0,0,0} },\n", ""), hold)
+
+
+@pytest.fixture
+def layout_diff(tmp_path, monkeypatch, capsys):
+    """Commit an old export, leave a new one in the worktree and diff them as sync.sh does."""
+    temp_git(tmp_path, "init", "-q")
+    layout = tmp_path / "layout"
+    layout.mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    def write(src: str, meta: dict | str | list | None) -> None:
+        (layout / "keymap.c").write_text(src)
+        (layout / ".oryx.json").unlink(missing_ok=True)
+        if meta is not None:
+            (layout / ".oryx.json").write_text(meta if isinstance(meta, str) else json.dumps(meta))
+
+    def run(old, old_meta, new, new_meta, *flags: str) -> str:
+        write(old if isinstance(old, str) else export(old), old_meta)
+        temp_git(tmp_path, "add", "-A")
+        temp_git(tmp_path, "commit", "-qm", "old", "--allow-empty")
+        write(new if isinstance(new, str) else export(new), new_meta)
+        assert ol.main(["diff", "HEAD:layout/keymap.c", "layout/keymap.c", "--meta", "layout/.oryx.json", *flags]) == 0
+        return capsys.readouterr().out.strip()
+
+    return run
+
+
+FOUR = [base_keys(), NAV, SYM, FUN]
+FOUR_NAMES = titles("Base", "Nav", "Sym", "Fun")
+
+
+def test_diff_unchanged(layout_diff):
+    assert layout_diff(FOUR, FOUR_NAMES, FOUR, FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_insert_reports_only_the_insert(layout_diff):
+    new = export([base_to(nav=2, sym=3), NEW, NAV, SYM, FUN], 4)
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Mouse", "Nav", "Sym", "Fun"))
+    assert out == "- Layer added: **Mouse** (position 1)"
+
+
+def test_diff_removal(layout_diff):
+    new = export([base_to(nav=None, sym=1), SYM, FUN], 2)
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Sym", "Fun"))
+    assert out.splitlines() == [
+        "- Layer removed: **Nav** (position 1)",
+        "- **Base** (L3.4): `Space/Nav (removed)` → `Space`",
+    ]
+
+
+def test_diff_reorder_reports_one_move(layout_diff):
+    new = export([base_to(nav=2, sym=1), SYM, NAV, FUN])
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Sym", "Nav", "Fun"))
+    assert out == "- Layer moved: **Nav** (position 1 → 2)"
+
+
+def test_diff_move_past_several_layers_is_one_move(layout_diff):
+    new = export([base_to(nav=3, sym=1), SYM, FUN, NAV], 2)
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Sym", "Fun", "Nav"))
+    assert out == "- Layer moved: **Nav** (position 1 → 3)"
+
+
+def test_diff_rename_with_unchanged_content(layout_diff):
+    out = layout_diff(FOUR, FOUR_NAMES, FOUR, titles("Base", "Arrows", "Sym", "Fun"))
+    assert out == "- Layer renamed: **Nav** → **Arrows**"
+
+
+def test_diff_rename_plus_an_edit(layout_diff):
+    new = [base_keys(), edited(NAV), SYM, FUN]
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Arrows", "Sym", "Fun"))
+    assert out.splitlines() == ["- Layer renamed: **Nav** → **Arrows**", "- **Arrows** (L0.0): `←` → `Home`"]
+
+
+def test_diff_rename_and_move_keeps_the_layer(layout_diff):
+    new = export([base_to(nav=2, sym=1), SYM, NAV, FUN])
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Sym", "Arrows", "Fun"))
+    assert out.splitlines() == ["- Layer renamed: **Nav** → **Arrows**", "- Layer moved: **Arrows** (position 1 → 2)"]
+
+
+def test_diff_two_renames_swapped_follow_the_content(layout_diff):
+    """The keys stayed put and only the names traded places: not a move, and no key lines."""
+    out = layout_diff(FOUR, FOUR_NAMES, FOUR, titles("Base", "Sym", "Nav", "Fun"))
+    assert out.splitlines() == ["- Layer renamed: **Nav** → **Sym**", "- Layer renamed: **Sym** → **Nav**"]
+
+
+def test_diff_same_name_new_content_stays_the_same_layer(layout_diff):
+    rewritten = [base_keys(), NEW, SYM, FUN]
+    out = layout_diff(FOUR, FOUR_NAMES, rewritten, FOUR_NAMES)
+    assert "Layer added" not in out and "Layer removed" not in out
+    assert "- **Nav** (L0.0): `←` → `1`" in out
+
+
+def test_diff_rewritten_layer_under_a_new_name_is_a_replacement(layout_diff):
+    out = layout_diff(FOUR, FOUR_NAMES, [base_keys(), NEW, SYM, FUN], titles("Base", "Mouse", "Sym", "Fun"))
+    assert out.splitlines() == [
+        "- Layer added: **Mouse** (position 1)",
+        "- Layer removed: **Nav** (position 1)",
+        "- **Base** (L3.4): `Space/Nav (removed)` → `Space/Mouse`",
+    ]
+
+
+def test_diff_a_tiny_layer_edit_under_a_new_name_is_not_a_match(layout_diff):
+    """One key of two matching isn't a majority, however small the layer."""
+    one, two = filler(), filler()
+    one[:2] = ["KC_A", "KC_B"]
+    two[:2] = ["KC_A", "KC_C"]
+    out = layout_diff([base_keys(), one], titles("Base", "One"), [base_keys(), two], titles("Base", "Two"))
+    assert out.splitlines()[:2] == ["- Layer added: **Two** (position 1)", "- Layer removed: **One** (position 1)"]
+
+
+def test_diff_unnamed_insert(layout_diff):
+    plain = titles("Layer", "Layer", "Layer", "Layer")
+    new = export([base_to(nav=2, sym=3), NEW, NAV, SYM, FUN], 4)
+    out = layout_diff(FOUR, plain, new, titles("Layer", "Layer", "Layer", "Layer", "Layer"))
+    assert out == "- Layer added: **Layer 1** (position 1)"
+
+
+def test_diff_unnamed_insert_plus_an_edit_labels_the_new_position(layout_diff):
+    plain = titles("Layer", "Layer", "Layer", "Layer")
+    new = export([base_to(nav=2, sym=3), NEW, NAV, edited(SYM), FUN], 4)
+    out = layout_diff(FOUR, plain, new, titles("Layer", "Layer", "Layer", "Layer", "Layer"))
+    assert out.splitlines() == ["- Layer added: **Layer 1** (position 1)", "- **Layer 3** (L0.0): `!` → `Home`"]
+
+
+def test_diff_unnamed_layer_rewritten_in_place_pairs_by_index(layout_diff):
+    plain = titles("Layer", "Layer", "Layer", "Layer")
+    out = layout_diff(FOUR, plain, [base_keys(), NEW, SYM, FUN], plain)
+    assert "Layer added" not in out and "- **Layer 1** (L0.0): `←` → `1`" in out
+
+
+def test_diff_naming_an_unnamed_layer_is_a_rename(layout_diff):
+    plain = titles("Base", "Layer", "Sym", "Fun")
+    assert layout_diff(FOUR, plain, FOUR, FOUR_NAMES) == "- Layer renamed: **Layer 1** → **Nav**"
+
+
+def test_diff_identical_blank_layers_keep_their_order(layout_diff):
+    plain = titles("Layer", "Layer", "Layer")
+    old = [base_keys(), filler(), filler(), FUN]
+    new = export([base_to(nav=2, sym=3), NEW, filler(), filler(), FUN], 4)
+    out = layout_diff(old, plain, new, titles("Layer", "Layer", "Layer", "Layer", "Layer"))
+    assert out == "- Layer added: **Layer 1** (position 1)"
+
+
+def test_diff_duplicate_names_insert(layout_diff):
+    old = [base_keys(), NAV, SYM, FUN]
+    names = titles("Base", "Nav", "Nav", "Fun")
+    new = export([base_to(nav=2, sym=3), NEW, NAV, SYM, FUN], 4)
+    out = layout_diff(old, names, new, titles("Base", "Mouse", "Nav", "Nav", "Fun"))
+    assert out == "- Layer added: **Mouse** (position 1)"
+
+
+def test_diff_duplicate_names_edit_lands_on_the_right_one(layout_diff):
+    names = titles("Base", "Nav", "Nav", "Fun")
+    out = layout_diff(FOUR, names, [base_keys(), NAV, edited(SYM), FUN], names)
+    assert out == "- **Nav 2** (L0.0): `!` → `Home`"
+
+
+def test_diff_reference_retargeted_to_another_layer(layout_diff):
+    new = [base_to(sym=3), NAV, SYM, FUN]
+    assert layout_diff(FOUR, FOUR_NAMES, new, FOUR_NAMES) == "- **Base** (L4.0): `TG Sym` → `TG Fun`"
+
+
+def test_diff_same_number_new_layer_is_a_change(layout_diff):
+    """TG(2) stayed TG(2), but the layers traded places under it, so it does something else."""
+    plain = titles("Layer", "Layer", "Layer", "Layer")
+    new = [base_to(nav=2), SYM, NAV, FUN]  # the LT follows Nav; the TG doesn't follow Sym
+    out = layout_diff(FOUR, plain, new, plain)
+    assert out.splitlines() == ["- Layer moved: **Layer 2** (position 1 → 2)", "- **Layer 0** (L4.0): `TG Layer 1` → `TG Layer 2`"]
+
+
+def test_diff_reference_into_a_new_layer_is_a_change(layout_diff):
+    new = export([base_to(nav=2, sym=1), NEW, NAV, SYM, FUN], 4)
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Mouse", "Nav", "Sym", "Fun"))
+    assert out.splitlines() == ["- Layer added: **Mouse** (position 1)", "- **Base** (L4.0): `TG Sym` → `TG Mouse`"]
+
+
+def test_diff_dummy_layer_of_an_intercepted_key_is_not_a_reference(layout_diff):
+    """LT(2, KC_F14) handled in process_record_user: the 2 is a dummy, not the Sym layer."""
+    def with_dummy(src: str) -> str:
+        src = src.replace("#define DUAL_FUNC_0", "#define TH_X LT(2, KC_F14)\n#define DUAL_FUNC_0")
+        return src.replace("case ST_MACRO_0:", "case TH_X:\n      tap_code(KC_A);\n      return false;\n    case ST_MACRO_0:")
+
+    old_keys = edited(base_keys(), 1, "TH_X")
+    new_keys = edited(base_to(nav=2, sym=3), 1, "TH_X")
+    new = with_dummy(export([new_keys, NEW, NAV, SYM, FUN], 4))
+    out = layout_diff(with_dummy(export([old_keys, NAV, SYM, FUN])), FOUR_NAMES, new, titles("Base", "Mouse", "Nav", "Sym", "Fun"))
+    assert out == "- Layer added: **Mouse** (position 1)"
+
+
+def renumber_duals(src: str) -> str:
+    """What Oryx does when a dual-function key is added earlier in the file."""
+    src = src.replace("DUAL_FUNC_1", "DUAL_FUNC_7").replace("DUAL_FUNC_0", "DUAL_FUNC_1").replace("DUAL_FUNC_7", "DUAL_FUNC_0")
+    return src.replace("LT(14, KC_8)", "LT(9, KC_F2)").replace("LT(11, KC_W)", "LT(4, KC_E)")
+
+
+def test_diff_dual_func_renumber_is_no_change(layout_diff):
+    old = make_keymap(FOUR)
+    assert layout_diff(old, FOUR_NAMES, renumber_duals(old), FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_dual_func_real_behaviour_change_is_reported(layout_diff):
+    old = make_keymap(FOUR)
+    new = renumber_duals(old).replace("code16(KC_DLR)", "code16(KC_EQUAL)")
+    out = layout_diff(old, FOUR_NAMES, new, FOUR_NAMES, "--raw")
+    assert out == "- **Base** (L1.2): `$/Super` → `=/Super`  (`DUAL_FUNC_0` → `DUAL_FUNC_1`)"
+
+
+def test_diff_dual_func_hold_follows_its_layer(layout_diff):
+    new = export([base_keys(), NAV, SYM, FUN], 2)
+    assert layout_diff(FOUR, FOUR_NAMES, new, FOUR_NAMES) == "- **Base** (L3.5): `Ctrl/Fun` → `Ctrl/Sym`"
+
+
+def test_diff_same_legend_real_change_shows_the_raw_keycodes(layout_diff):
+    new = [edited(base_keys(), 0, "KC_LSFT"), NAV, SYM, FUN]
+    old = [edited(base_keys(), 0, "KC_RSFT"), NAV, SYM, FUN]
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "- **Base** (L0.0): `Shift` → `Shift`  (`KC_RSFT` → `KC_LSFT`)"
+
+
+def test_diff_leds_follow_the_layer(layout_diff):
+    def lit(src: str, position: int) -> str:
+        return src.replace("[1] = { {0,255,255}", f"[{position}] = {{ {{0,255,255}}")
+
+    old = lit(make_keymap(FOUR), 1)
+    new = dual_hold_to(lit(make_keymap([base_to(nav=2, sym=3), NEW, NAV, SYM, FUN]), 2), 4)
+    out = layout_diff(old, FOUR_NAMES, new, titles("Base", "Mouse", "Nav", "Sym", "Fun"))
+    assert out == "- Layer added: **Mouse** (position 1)"
+
+
+def test_diff_real_led_change_names_the_layer(layout_diff):
+    old = make_keymap(FOUR)
+    new = old.replace("{85,255,255}", "{86,255,255}")
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "- LED colours changed on layer(s) Nav"
+
+
+def test_diff_old_side_without_metadata_pairs_by_content_then_index(layout_diff):
+    new = export([base_to(nav=2, sym=3), NEW, NAV, edited(SYM), FUN], 4)
+    out = layout_diff(FOUR, None, new, titles("Base", "Mouse", "Nav", "Sym", "Fun"))
+    assert out.splitlines() == ["- Layer added: **Mouse** (position 1)", "- **Sym** (L0.0): `!` → `Home`"]
+
+
+@pytest.mark.parametrize("meta", [None, {"title": "no layers key"}, {"layers": []}])
+def test_diff_old_side_without_names_falls_back_to_index(layout_diff, meta):
+    out = layout_diff(FOUR, meta, [base_keys(), NEW, SYM, FUN], FOUR_NAMES)
+    assert "renamed" not in out and "Layer added" not in out and "Layer removed" not in out
+    assert "- **Nav** (L0.0): `←` → `1`" in out
+
+
+@pytest.mark.parametrize("meta", ["{not json", ["not", "a", "dict"]])
+def test_diff_corrupt_old_metadata_is_ignored(layout_diff, meta):
+    out = layout_diff(FOUR, meta, [base_keys(), edited(NAV), SYM, FUN], FOUR_NAMES)
+    assert out == "- **Nav** (L0.0): `←` → `Home`"
+
+
+def test_diff_both_sides_refs_read_their_own_metadata(tmp_path, monkeypatch, capsys):
+    temp_git(tmp_path, "init", "-q")
+    layout = tmp_path / "layout"
+    layout.mkdir()
+    for keymap, meta in ((FOUR, FOUR_NAMES), (FOUR, titles("Base", "Arrows", "Sym", "Fun"))):
+        (layout / "keymap.c").write_text(make_keymap(keymap))
+        (layout / ".oryx.json").write_text(json.dumps(meta))
+        temp_git(tmp_path, "add", "-A")
+        temp_git(tmp_path, "commit", "-qm", "export", "--allow-empty")
+    monkeypatch.chdir(tmp_path)
+    ol.main(["diff", "HEAD~1:layout/keymap.c", "HEAD:layout/keymap.c", "--meta", "/x"])
+    assert capsys.readouterr().out.strip() == "- Layer renamed: **Nav** → **Arrows**"
+
+
+def test_diff_plain_old_file_uses_metadata_beside_it_not_the_new_one(tmp_path, capsys):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    (tmp_path / "a/keymap.c").write_text(export(FOUR))
+    (tmp_path / "a/.oryx.json").write_text(json.dumps(FOUR_NAMES))
+    new = export([base_to(nav=2, sym=3), NEW, NAV, SYM, FUN], 4)
+    (tmp_path / "b/keymap.c").write_text(new)
+    meta = tmp_path / "b/.oryx.json"
+    meta.write_text(json.dumps(titles("Base", "Mouse", "Nav", "Sym", "Fun")))
+    ol.main(["diff", str(tmp_path / "a/keymap.c"), str(tmp_path / "b/keymap.c"), "--meta", str(meta)])
+    assert capsys.readouterr().out.strip() == "- Layer added: **Mouse** (position 1)"
+    (tmp_path / "a/.oryx.json").unlink()  # --meta describes the new file, so it mustn't name the old one
+    ol.main(["diff", str(tmp_path / "a/keymap.c"), str(tmp_path / "b/keymap.c"), "--meta", str(meta)])
+    assert capsys.readouterr().out.strip() == "- Layer added: **Mouse** (position 1)"
+
+
+def test_diff_limit_keeps_layer_lines_and_says_what_it_dropped(layout_diff):
+    rewritten = [f"KC_F{i % 12 + 1}" for i in range(sum(ROWS))]
+    new = export([rewritten, NEW, NAV, SYM, FUN], 4)
+    meta = titles("Base", "Mouse", "Nav", "Sym", "Fun")
+    full = layout_diff(FOUR, FOUR_NAMES, new, meta).splitlines()
+    short = layout_diff(FOUR, FOUR_NAMES, new, meta, "--limit", "5").splitlines()
+    keys = len(full) - 1
+    assert keys > 5
+    assert short == full[:6] + [f"- …and {keys - 5} more key changes"]
+
+
+# --- sync.sh's call, end to end ----------------------------------------------------
+
+
+@pytest.fixture
+def sync_repo(tmp_path):
+    """A repo with sync.sh's real scripts, and an oryx_fetch.py that serves a prepared export."""
+    repo = tmp_path / "repo"
+    shutil.copytree(Path(ol.__file__).parent, repo / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
+    (repo / "scripts/oryx_fetch.py").write_text(
+        'import os, shutil, sys\n'
+        'out = sys.argv[sys.argv.index("--out") + 1]\n'
+        'for name in os.listdir(os.environ["FAKE_EXPORT"]):\n'
+        '    shutil.copy(os.path.join(os.environ["FAKE_EXPORT"], name), out)\n'
+        'print("revision=r2\\nqmk_version=25.0\\nchange_note=Added a layer")\n'
+    )
+    (repo / "oryx.conf").write_text('ORYX_LAYOUT_ID=default\nKEYBOARD=voyager\n')
+    (repo / "layout").mkdir()
+    (repo / "layout/keymap.c").write_text(make_keymap(FOUR))
+    (repo / "layout/.oryx.json").write_text(json.dumps(FOUR_NAMES))
+    temp_git(repo, "init", "-q")
+    temp_git(repo, "checkout", "-qb", "main")
+    temp_git(repo, "add", "-A")
+    temp_git(repo, "commit", "-qm", "first export")
+    return repo
+
+
+def sync(repo: Path, tmp_path: Path, keymap: str, meta: dict) -> subprocess.CompletedProcess:
+    export = tmp_path / "export"
+    export.mkdir()
+    (export / "keymap.c").write_text(keymap)
+    (export / ".oryx.json").write_text(json.dumps(meta))
+    env = {
+        **os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "PYTHON": sys.executable,
+        "CACHE_DIR": str(tmp_path / "cache"), "FAKE_EXPORT": str(export),
+        "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
+    }
+    return subprocess.run(["bash", str(repo / "scripts/sync.sh")], capture_output=True, text=True, env=env, cwd=repo)
+
+
+def test_sync_commit_message_reports_the_insert(sync_repo, tmp_path):
+    new = export([base_to(nav=2, sym=3), NEW, NAV, SYM, FUN], 4)
+    res = sync(sync_repo, tmp_path, new, titles("Base", "Mouse", "Nav", "Sym", "Fun"))
+    assert res.returncode == 0, res.stderr
+    body = subprocess.run(["git", "-C", str(sync_repo), "log", "-1", "oryx", "--format=%B"], capture_output=True, text=True, check=True).stdout
+    assert "- Layer added: **Mouse** (position 1)" in body
+    assert "→" not in body
+
+
+def test_sync_commit_message_is_bounded_but_keeps_layer_lines(sync_repo, tmp_path):
+    rewritten = [f"KC_F{i % 12 + 1}" for i in range(sum(ROWS))]
+    new = export([rewritten, NEW, [k.replace("KC_F", "KC_") for k in rewritten], SYM, FUN], 4)
+    res = sync(sync_repo, tmp_path, new, titles("Base", "Mouse", "Nav", "Sym", "Fun"))
+    assert res.returncode == 0, res.stderr
+    body = subprocess.run(["git", "-C", str(sync_repo), "log", "-1", "oryx", "--format=%B"], capture_output=True, text=True, check=True).stdout
+    assert "- Layer added: **Mouse** (position 1)" in body
+    assert sum(line.startswith("- **") for line in body.splitlines()) == 60
+    assert re.search(r"^- …and \d+ more key changes$", body, re.M)

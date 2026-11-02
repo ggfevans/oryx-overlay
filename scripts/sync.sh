@@ -92,7 +92,7 @@ RC=0
   SUMMARY=""
   if git cat-file -e HEAD:layout/keymap.c 2>/dev/null; then
     SUMMARY="$("$PY" "$ROOT/scripts/oryx_layout.py" --style "$LEGEND_STYLE" diff HEAD:layout/keymap.c layout/keymap.c \
-      --meta layout/.oryx.json 2>/dev/null | head -n 60 || true)"
+      --meta layout/.oryx.json --limit 60 2>/dev/null || true)"
   fi
   git commit --quiet -m "oryx: $NOTE" -m "Oryx revision $REVISION, firmware v$VERSION." ${SUMMARY:+-m "$SUMMARY"}
 ) || RC=$?

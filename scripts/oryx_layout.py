@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -126,6 +127,8 @@ class Keymap:
     dual_funcs: dict[str, tuple[str, str]] = field(default_factory=dict)
     ledmap: dict[int, list[tuple[int, int, int]]] = field(default_factory=dict)
     tri_layers: list[tuple[str, str, str]] = field(default_factory=list)  # update_tri_layer_state(a, b, c)
+    combos: list[str] = field(default_factory=list)  # what each COMBO(keys, result) sends
+    intercepted: set[str] = field(default_factory=set)  # keys process_record_user swallows, see _intercepted()
     i18n: dict[str, str] = field(default_factory=dict)  # name -> value, from the i18n.h beside keymap.c
 
     def layer_index(self, arg: str) -> int | None:
@@ -163,6 +166,34 @@ def _branch_action(body: str) -> str:
         return ""
     fn, arg = m.groups()
     return arg if fn == "register_code16" else f"{_LAYER_CALLS[fn]}({arg})"
+
+
+def _intercepted(src: str) -> list[str]:
+    """Case labels that always end process_record_user with `return false`.
+
+    Firmware never acts on such a key, so an LT(6, KC_F14) handled this way has a dummy
+    layer. A case that can fall through, break or return true keeps its real meaning:
+    `if (record->tap.count) {...; return false;} return true;` still holds the layer.
+    """
+    m = re.search(r"\bprocess_record_user\s*\([^)]*\)\s*\{", src)
+    if not m:
+        return []
+    body, _ = balanced(src, m.end() - 1)
+    labels: list[str] = []
+    out: list[str] = []
+    for sw in re.finditer(r"\bswitch\s*\(\s*keycode\s*\)\s*\{", body):
+        parts = re.split(r"\bcase\s+(.+?)\s*:|\bdefault\s*:", balanced(body, sw.end() - 1)[0])
+        for label, code in zip(parts[1::2], parts[2::2]):
+            labels += [label] if label else []
+            if code.strip():  # stacked labels share the next body
+                if re.search(r"\breturn\s+false\s*;\s*$", code) and not re.search(r"\breturn\s+true\b|\bbreak\b", code):
+                    out += labels
+                labels = []
+    return out
+
+
+def _compact(kc: str) -> str:
+    return "".join(kc.split())
 
 
 def parse_keymap(text: str) -> Keymap:
@@ -220,7 +251,11 @@ def parse_keymap(text: str) -> Keymap:
     tri = [tuple(split_args(m.group(1))[1:4]) for m in re.finditer(r"update_tri_layer_state\s*\(([^;]*)\)\s*;", src)]
     tri = [t for t in tri if len(t) == 3]
 
-    return Keymap(layout_macro=layout_macro, layers=layers, row_sizes=row_sizes, defines=defines, dual_funcs=dual, ledmap=ledmap, tri_layers=tri)
+    combos = [args[1] for m in re.finditer(r"\bCOMBO\s*\(", src) if len(args := split_args(balanced(src, m.end() - 1)[0])) == 2]
+
+    km = Keymap(layout_macro=layout_macro, layers=layers, row_sizes=row_sizes, defines=defines, dual_funcs=dual, ledmap=ledmap, tri_layers=tri, combos=combos)
+    km.intercepted = {_compact(km.resolve(label)) for label in _intercepted(src)}
+    return km
 
 
 def assign_layer_names(km: Keymap, meta: dict | None) -> None:
@@ -543,7 +578,7 @@ class Labeller:
             return []  # unparsed Oryx dual function: its LT() layer is a dummy
         kc = self.km.resolve(raw)
         c = call(kc)
-        if not c:
+        if not c or _compact(kc) in self.km.intercepted:
             return []
         fn, args = c
         if (fn in LAYER_FUNCS and len(args) == 1) or (fn in ("LT", "LM") and len(args) == 2):
@@ -653,6 +688,152 @@ def key_colours(km: Keymap, geo: Geometry) -> dict[int, dict[int, str]]:
 # --------------------------------------------------------------------------
 
 
+# Trap search limits: fingers holding layer keys at once, and states walked before giving up.
+MAX_HELD = 3
+MAX_STATES = 200_000
+
+_HOLDS = {"MO", "LT", "LM", "OSL"}
+_TRAP_HEDGE = "(fine if a macro, combo, tap dance or custom code does)"
+
+
+def layer_states(km: Keymap, lab: Labeller) -> tuple[dict, dict] | None:
+    """Walk every layer state the keys can put the firmware in, from power-on.
+
+    A state is (layer_state, default_layer_state, held keys), the two masks as in
+    quantum/action_layer.c. Keys act as they do in quantum/action.c:
+
+      MO, LT, LM  on while held; release clears the bit, even if TG set it
+      OSL         the same, except that the key itself is free for the next press
+      TG          flips the bit
+      TT          tapped, flips the bit; held, on until release
+      TO          layer_state becomes that layer alone, the default stays on
+      DF          replaces the default layer and leaves layer_state alone
+
+    A key is found as in layer_switch_get_layer(): top active layer down, through
+    transparent keys, looking only at layers that are on. So what is reachable, and
+    from where, follows from the keys instead of being guessed from how a layer was
+    entered. Returns (state -> next states, state -> the (fn, target, layer) that led
+    to it), in discovery order, or None if there are more than MAX_STATES.
+    """
+    moves = {l.index: [lab.targets(raw) for raw in l.keys] for l in km.layers}
+    clear = {l.index: [lab.legend(raw).kind == "trans" for raw in l.keys] for l in km.layers}
+    top_down = sorted(moves, reverse=True)
+    width = max(len(keys) for keys in moves.values())
+    tris = [(km.layer_index(a), km.layer_index(b), km.layer_index(c)) for a, b, c in km.tri_layers]
+    tris = [((1 << a) | (1 << b), 1 << c) for a, b, c in tris if None not in (a, b, c)]
+    combos = [(width + i, None, fn, tgt) for i, raw in enumerate(km.combos) for fn, tgt in lab.targets(raw)]
+
+    def settle(layers: int) -> int:
+        for both, tri in tris:
+            layers = layers | tri if layers & both == both else layers & ~tri
+        return layers
+
+    keys_at: dict[int, list] = {}
+
+    def visible(active: int) -> list:
+        """(position, layer the key is on, fn, target) of each layer key in reach."""
+        if active not in keys_at:
+            found = []
+            for ki in range(width):
+                on = (i for i in top_down if active >> i & 1 and ki < len(clear[i]) and not clear[i][ki])
+                layer = next(on, None)
+                if layer is not None:
+                    found += [(ki, layer, fn, tgt) for fn, tgt in moves[layer][ki] if tgt in moves]
+            # Combos count from every layer: they need their keys, which this doesn't
+            # check, so one can only hide a trap, never invent one.
+            keys_at[active] = found + [c for c in combos if c[3] in moves]
+        return keys_at[active]
+
+    def steps(state: tuple):
+        layers, default, held = state
+        for key in held:
+            yield (settle(layers & ~(1 << key[1])), default, held - {key}), None
+        down = {ki for ki, _ in held}
+        for ki, source, fn, tgt in visible(layers | default):
+            if ki in down:
+                continue
+            via, bit = (fn, tgt, source), 1 << tgt
+            if (fn in _HOLDS or (fn == "TT" and not layers & bit)) and len(held) < MAX_HELD:
+                yield (settle(layers | bit), default, held | {(-1 if fn == "OSL" else ki, tgt)}), via
+            if fn in ("TG", "TT"):
+                yield (settle(layers ^ bit), default, held), via
+            elif fn == "TO":
+                yield (settle(bit), default, held), via
+            elif fn == "DF":
+                yield (layers, bit, held), via
+
+    start = (0, 1 << km.layers[0].index, frozenset())
+    graph: dict[tuple, set] = {}
+    entered = {start: None}
+    queue = deque([start])
+    while queue:
+        state = queue.popleft()
+        graph[state] = set()
+        for nxt, via in steps(state):
+            graph[state].add(nxt)
+            if nxt not in entered:
+                if len(entered) >= MAX_STATES:
+                    return None
+                entered[nxt] = via or entered[state]
+                queue.append(nxt)
+    return graph, entered
+
+
+def trap_issues(km: Keymap, lab: Labeller) -> list[tuple[str, str]]:
+    """Warn about layers the keys can put you on and never take you off.
+
+    Only resting states count, with every key released. A layer is trapped if some
+    route onto it leaves no route off, so one safe way in clears nothing, and a layer
+    entered only by holding a key can't be trapped. Keys this can't see through (macros,
+    tap dances, custom code) count as doing nothing: a warning here means no modelled
+    key gets out, which the hedge in the message says.
+    """
+    walked = layer_states(km, lab)
+    if walked is None:
+        return [("warn", f"too many layer combinations to check for traps (over {MAX_STATES})")]
+    graph, entered = walked
+    back: dict[tuple, list] = {state: [] for state in graph}
+    for state, nexts in graph.items():
+        for nxt in nexts:
+            back[nxt].append(state)
+
+    def leads_to(goals: list) -> set:
+        seen, todo = set(goals), list(goals)
+        while todo:
+            for prev in back[todo.pop()]:
+                if prev not in seen:
+                    seen.add(prev)
+                    todo.append(prev)
+        return seen
+
+    resting = [s for s in entered if not s[2]]
+    issues = []
+    trapped = 0
+    for layer in km.layers[1:]:
+        bit = 1 << layer.index
+        out = leads_to([s for s in resting if not (s[0] | s[1]) & bit])
+        stuck = next((s for s in resting if (s[0] | s[1]) & bit and s not in out), None)
+        if stuck:
+            trapped |= bit
+            fn, tgt, source = entered[stuck]
+            where = "a combo" if source is None else lab.names[source]
+            issues.append(("warn", f"{layer.name}: no way to leave this layer after {fn}({tgt}) on {where} {_TRAP_HEDGE}"))
+
+    # Layers that can each be left, but only for one another (TO(2) on 1, TO(1) on 2).
+    base = km.layers[0]
+    base_bit = 1 << base.index
+    home = leads_to([s for s in resting if s[1] == base_bit and not s[0] & ~base_bit])
+    doomed = leads_to([s for s in resting if (s[0] | s[1]) & trapped])  # already reported
+    lost = 0
+    for state in resting:
+        if state not in home and state not in doomed:
+            lost |= (state[0] | state[1]) & ~base_bit
+    if lost:
+        names = ", ".join(l.name for l in km.layers if lost >> l.index & 1)
+        issues.append(("warn", f"{names}: no way to get back to {base.name} from these layers {_TRAP_HEDGE}"))
+    return issues
+
+
 def lint(km: Keymap, lab: Labeller) -> list[tuple[str, str]]:
     """Return [(level, message)] where level is 'error' or 'warn'."""
     issues: list[tuple[str, str]] = []
@@ -665,33 +846,18 @@ def lint(km: Keymap, lab: Labeller) -> list[tuple[str, str]]:
                     issues.append(("error", f"{layer.name}: `{raw}` points at layer {tgt}, which does not exist"))
                 elif tgt != layer.index:
                     reached[tgt].add(fn)
+    for raw in km.combos:
+        for fn, tgt in lab.targets(raw):
+            if tgt in valid:
+                reached[tgt].add(fn)
     for _a, _b, c in km.tri_layers:
         idx = km.layer_index(c)
         if idx in reached:
             reached[idx].add("TRI")
     for layer in km.layers[1:]:
-        how = reached.get(layer.index, set())
-        if not how:
+        if not reached.get(layer.index):
             issues.append(("warn", f"{layer.name}: no key reaches this layer (fine if a macro, combo or custom code does)"))
-        elif how <= {"TO", "TG", "DF"}:
-            lower = [l for l in km.layers if l.index < layer.index][::-1]
-
-            def effective(ki: int, raw: str) -> str:
-                # A transparent key acts as the nearest lower layer's key at that
-                # position, so a TG() underneath is a way out too.
-                for other in lower:
-                    if lab.legend(raw).kind != "trans":
-                        break
-                    raw = other.keys[ki] if ki < len(other.keys) else raw
-                return raw
-
-            exits = any(
-                fn in ("TO", "TG", "DF") and (tgt != layer.index or fn == "TG")
-                for ki, raw in enumerate(layer.keys)
-                for fn, tgt in lab.targets(effective(ki, raw))
-            )
-            if not exits:
-                issues.append(("warn", f"{layer.name}: entered with {'/'.join(sorted(how))} but has no TO/TG key to leave"))
+    issues += trap_issues(km, lab)
     base = km.layers[0]
     trans = sum(1 for k in base.keys if lab.legend(k).kind == "trans")
     if trans:

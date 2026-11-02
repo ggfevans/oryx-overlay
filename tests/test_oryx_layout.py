@@ -321,7 +321,7 @@ def test_led_colours_map_to_keys(four_layers):
 def test_lint(four_layers):
     issues = ol.lint(four_layers, ol.Labeller(four_layers))
     text = "\n".join(m for _, m in issues)
-    assert "Layer 2: entered with TG" not in text  # has TO(0) to leave
+    assert "no way to leave" not in text  # Layer 2 has TO(0)
     assert all(lvl == "warn" for lvl, _ in issues)
     assert "Base: 1 transparent key(s)" in text
 
@@ -335,7 +335,7 @@ def test_lint_flags_trap_and_dangling():
     ol.assign_layer_names(km, None)
     issues = ol.lint(km, ol.Labeller(km))
     assert ("error", "Layer 0: `MO(9)` points at layer 9, which does not exist") in issues
-    assert any("Layer 2: entered with TG but has no TO/TG key to leave" in m for _, m in issues)
+    assert any(m.startswith("Layer 2: no way to leave this layer after TG(2)") for _, m in issues)
 
 
 def test_lm_reaches_its_layer():
@@ -628,7 +628,258 @@ def test_transparent_key_over_toggle_is_an_exit():
     # same position falls through to that TG(2), so it is not a trap.
     km = ol.parse_keymap(make_keymap([base_keys(), filler(), filler(), filler()]))
     ol.assign_layer_names(km, None)
-    assert not [m for _, m in ol.lint(km, ol.Labeller(km)) if "no TO/TG key to leave" in m]
+    assert not [m for _, m in ol.lint(km, ol.Labeller(km)) if "no way to leave" in m]
+
+
+# Trap check: the lint walks QMK's layer state, so these spell out what firmware does.
+TRAP = "no way to leave this layer"
+TG2, LT1, DF1 = 48, 40, 41  # where base_keys() puts TG(2), LT(1, ...) and DUAL_FUNC_1
+
+
+def lint_layers(*layers: list[str]) -> list[tuple[str, str]]:
+    km = ol.parse_keymap(make_keymap(list(layers)))
+    ol.assign_layer_names(km, None)
+    return ol.lint(km, ol.Labeller(km))
+
+
+def traps(*layers: list[str]) -> list[str]:
+    return [m for _, m in lint_layers(*layers) if TRAP in m or "get back to" in m]
+
+
+def closed(**keys: str) -> list[str]:
+    """A layer that covers TG(2), LT(1) and DUAL_FUNC_1, so only `keys` (k48="TO(0)") act."""
+    layer = filler()
+    layer[TG2] = layer[LT1] = layer[DF1] = "KC_NO"
+    for pos, kc in keys.items():
+        layer[int(pos[1:])] = kc
+    return layer
+
+
+def test_transparency_skips_inactive_layers():
+    # Issue 17, false positive: layer 1 has KC_A here but isn't on, so layer 2's
+    # transparent key lands on the base layer's TG(2).
+    middle = filler()
+    middle[TG2] = "KC_A"
+    assert traps(base_keys(), middle, filler(), filler()) == []
+
+
+def test_toggling_a_lower_layer_does_not_leave():
+    # Issue 17, false negative: TG(1) only adds a layer underneath layer 2.
+    assert len(traps(base_keys(), filler(), closed(k0="TG(1)"), filler())) == 1
+
+
+def test_trap_message_names_the_key_that_gets_you_there():
+    assert traps(base_keys(), filler(), closed(), filler()) == [
+        "Layer 2: no way to leave this layer after TG(2) on Layer 0 (fine if a macro, combo, tap dance or custom code does)"
+    ]
+
+
+def test_df_does_not_clear_a_toggled_layer():
+    found = traps(base_keys(), filler(), closed(k0="DF(1)"), filler())
+    assert any(m.startswith("Layer 2: no way to leave") for m in found)
+
+
+@pytest.mark.parametrize("exit_key", ["TO(0)", "TO(3)", "TG(2)", "MO(2)", "LT(2, KC_A)", "LM(2, MOD_LCTL)", "OSL(2)", "TT(2)"])
+def test_exits_from_a_toggled_layer(exit_key):
+    # Releasing MO, LT, LM or OSL clears the layer's bit, even one TG set.
+    layer3 = filler()
+    layer3[0] = "TO(0)"
+    assert traps(base_keys(), filler(), closed(k5=exit_key), layer3) == []
+
+
+def test_to_replaces_the_active_layers():
+    # TO(3) drops layers 1 and 2, so layer 3's transparent key no longer reaches the
+    # TG(3) on layer 2, and the base layer has KC_Q there.
+    base = base_keys()
+    base[TG2] = "TO(2)"
+    layer3 = closed()
+    layer3[5] = "KC_TRANSPARENT"
+    assert traps(base, filler(), closed(k5="TG(3)", k6="TO(3)"), layer3) == [
+        "Layer 3: no way to leave this layer after TO(3) on Layer 2 (fine if a macro, combo, tap dance or custom code does)"
+    ]
+
+
+def test_to_cycle_that_never_returns_to_base():
+    # Each layer can be left, but only for the other one.
+    base = base_keys()
+    base[TG2] = "TO(1)"
+    assert traps(base, closed(k0="TO(2)"), closed(k0="TO(1)"), filler()) == [
+        "Layer 1, Layer 2: no way to get back to Layer 0 from these layers (fine if a macro, combo, tap dance or custom code does)"
+    ]
+
+
+def test_momentary_layers_are_never_traps():
+    base = base_keys()
+    base[TG2] = "MO(2)"
+    assert traps(base, closed(), closed(), closed()) == []
+
+
+def test_osl_is_not_a_trap():
+    base = base_keys()
+    base[TG2] = "OSL(2)"
+    assert traps(base, filler(), closed(), filler()) == []
+
+
+def test_every_way_in_counts_a_momentary_entry_hides_no_trap():
+    # MO(2) is safe but TG(2) latches the layer, and layer 2 covers both keys.
+    base = base_keys()
+    base[0] = "MO(2)"
+    layer2 = closed()
+    layer2[0] = "KC_NO"
+    assert len(traps(base, filler(), layer2, filler())) == 1
+
+
+def test_momentary_key_for_self_under_transparency_is_the_way_out():
+    base = base_keys()
+    base[0] = "MO(2)"
+    assert traps(base, filler(), closed(), filler()) == []
+
+
+def test_one_safe_path_does_not_clear_a_trapped_one():
+    # Layer 1 toggled on, then TG(2): layer 2's transparent key finds layer 1's TG(2).
+    # Held on LT(1) instead, layer 1 goes away on release and the same key finds KC_Q.
+    base = base_keys()
+    base[TG2] = "KC_A"
+    base[1] = "TG(1)"
+    middle = filler()
+    middle[0] = "TG(2)"
+    assert len(traps(base, middle, closed(k1="KC_NO"), filler())) == 1
+
+
+def test_a_trapped_path_is_not_reported_when_every_path_gets_out():
+    # As above, with TG(1) left visible: from the held path, layer 2 can turn layer 1
+    # on and leave through its TG(2).
+    base = base_keys()
+    base[TG2] = "KC_A"
+    base[1] = "TG(1)"
+    middle = filler()
+    middle[0] = "TG(2)"
+    assert traps(base, middle, closed(), filler()) == []
+
+
+def test_exit_through_a_held_layer():
+    # Layer 2 has no exit of its own, but LT(1) falls through it and layer 1 has TG(2).
+    middle = filler()
+    middle[0] = "TG(2)"
+    layer2 = closed()
+    layer2[LT1] = "KC_TRANSPARENT"
+    assert traps(base_keys(), middle, layer2, filler()) == []
+
+
+def test_held_key_cannot_also_be_pressed():
+    # The only TG(2) on layer 1 sits under the finger holding LT(1).
+    middle = filler()
+    middle[LT1] = "TG(2)"
+    layer2 = closed()
+    layer2[LT1] = "KC_TRANSPARENT"
+    assert len(traps(base_keys(), middle, layer2, filler())) == 1
+
+
+def test_latched_tt_needs_an_exit():
+    base = base_keys()
+    base[TG2] = "TT(2)"
+    assert len(traps(base, filler(), closed(), filler())) == 1  # was skipped: TT isn't TG
+    assert traps(base, filler(), filler(), filler()) == []  # transparent over its own TT
+
+
+def test_df_needs_a_way_back_and_to_does_not_clear_the_default():
+    base = base_keys()
+    base[TG2] = "DF(2)"
+    assert len(traps(base, filler(), closed(k0="TO(0)"), filler())) == 1  # TO leaves the default on
+    assert traps(base, filler(), closed(k0="DF(0)"), filler()) == []
+
+
+def test_tri_layer_is_on_only_with_both_layers():
+    km = ol.parse_keymap(
+        make_keymap([base_keys(), filler(), filler(), closed()])
+        + "\nlayer_state_t layer_state_set_user(layer_state_t state) { return update_tri_layer_state(state, 1, 2, 3); }\n"
+    )
+    ol.assign_layer_names(km, None)
+    assert not [m for _, m in ol.lint(km, ol.Labeller(km)) if TRAP in m]
+
+
+def test_too_many_states_says_so_instead_of_guessing(monkeypatch):
+    monkeypatch.setattr(ol, "MAX_STATES", 1)
+    assert [m for _, m in lint_layers(base_keys(), filler(), filler(), filler()) if "too many" in m]
+
+
+def test_combo_reaches_a_layer():
+    base = base_keys()
+    base[TG2] = "KC_A"
+    km = ol.parse_keymap(make_keymap([base, filler(), filler(), filler()]) + "\ncombo_t key_combos[] = { COMBO(combo0, OSL(2)), };\n")
+    ol.assign_layer_names(km, None)
+    assert km.combos == ["OSL(2)"]
+    assert not [m for _, m in ol.lint(km, ol.Labeller(km)) if m.startswith("Layer 2: no key reaches")]
+
+
+# LT(dummy, KC) helpers: the export names a key, then process_record_user swallows it.
+HELPER = """
+    case TH_LTGT:
+      if (record->tap.count > 0) {
+        if (record->event.pressed) {
+          register_code16(KC_LT);
+        } else {
+          unregister_code16(KC_LT);
+        }
+      }
+      BODY
+"""
+
+
+def helper_keymap(layer: str, body: str = "return false;") -> ol.Keymap:
+    base = base_keys()
+    base[0] = "TH_LTGT"
+    src = make_keymap([base, filler(), filler(), filler()])
+    src = src.replace("#define DUAL_FUNC_0", f"#define TH_LTGT LT({layer}, KC_F14)\n#define DUAL_FUNC_0")
+    src = src.replace("    case ST_MACRO_0:", HELPER.replace("BODY", body) + "    case ST_MACRO_0:")
+    km = ol.parse_keymap(src)
+    ol.assign_layer_names(km, None)
+    return km
+
+
+def test_dummy_layer_helper_is_not_dangling():
+    km = helper_keymap("6")
+    assert not [i for i in ol.lint(km, ol.Labeller(km)) if i[0] == "error"]
+
+
+def test_dummy_layer_helper_at_end_of_switch_is_not_dangling():
+    base = base_keys()
+    base[0] = "LT(6, KC_F14)"
+    src = make_keymap([base, filler(), filler(), filler()]).replace(
+        "      return false;\n  }\n  return true;", "      return false;\n    case LT(6,KC_F14):\n      tap_code(KC_A);\n      return false;\n  }\n  return true;"
+    )
+    km = ol.parse_keymap(src)
+    ol.assign_layer_names(km, None)
+    assert not [i for i in ol.lint(km, ol.Labeller(km)) if i[0] == "error"]
+
+
+def test_dummy_layer_helper_does_not_reach_a_real_layer():
+    km = helper_keymap("3")
+    assert ol.Labeller(km).targets("TH_LTGT") == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "return true;",  # the hold reaches the real LT
+        "if (record->tap.count) { return false; } return true;",
+        "break;",
+        "if (x) { return false; }",  # falls through when x is false
+    ],
+)
+def test_helper_that_lets_the_hold_through_is_still_checked(body):
+    km = helper_keymap("6", body)
+    assert ("error", "Layer 0: `TH_LTGT` points at layer 6, which does not exist") in ol.lint(km, ol.Labeller(km))
+
+
+def test_case_outside_process_record_user_is_not_a_helper():
+    extra = "uint16_t get_tapping_term(uint16_t keycode, keyrecord_t *record) { switch (keycode) { case TH_LTGT: return false; } return 200; }\n"
+    base = base_keys()
+    base[0] = "TH_LTGT"
+    src = make_keymap([base, filler(), filler(), filler()]).replace("#define DUAL_FUNC_0", "#define TH_LTGT LT(6, KC_F14)\n#define DUAL_FUNC_0")
+    km = ol.parse_keymap(src + extra)
+    ol.assign_layer_names(km, None)
+    assert any(lvl == "error" for lvl, _ in ol.lint(km, ol.Labeller(km)))
 
 
 @pytest.mark.parametrize("name", ["<!--<script", "</script>", "a&b", "x\u2028y<>"])

@@ -37,14 +37,6 @@ CURRENT="$(git rev-parse --abbrev-ref HEAD)"
 if [[ -n "$(git status --porcelain --untracked-files=no -- . ':(exclude)docs')" ]]; then
   die "working tree has uncommitted changes; commit or stash them first"
 fi
-# Files git doesn't track yet would make the final merge refuse if the new export adds
-# one of the same name. layout/ belongs to Oryx, so stop here, before anything is changed.
-UNTRACKED="$(git ls-files --others --exclude-standard -- layout)"
-if [[ -n "$UNTRACKED" ]]; then
-  die "untracked files in layout/ could collide with the Oryx export: $(printf '%s' "$UNTRACKED" | tr '\n' ' ')
-Move them out of layout/ (put your own code in custom/), or 'git add' and commit them, then run sync again."
-fi
-
 WT="$CACHE_DIR/oryx-worktree"
 cleanup() { git worktree remove --force "$WT" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -77,6 +69,8 @@ clear_stale_worktree() {
       */worktrees/oryx-worktree*) ;;
       *) die "'$WT' is not a leftover oryx worktree; remove it yourself if it is safe, then run sync again" ;;
     esac
+    # A relative gitdir (worktree.useRelativePaths) is relative to the worktree, not the cwd.
+    case "$gitdir" in /*) ;; *) gitdir="$real/$gitdir" ;; esac
     [[ ! -e "$gitdir" ]] \
       || die "'$WT' still belongs to a repository that exists ($gitdir); remove it yourself if it is safe, then run sync again"
   else
@@ -102,22 +96,16 @@ if [[ $HAS_ORIGIN == 1 ]] && git ls-remote --exit-code --heads origin oryx >/dev
   fi
 fi
 
+# Does origin/oryx share any history with this branch? Not if it was deleted and
+# recreated from scratch (or the repo was made from a template after CI had synced).
+RECREATED=0
+if [[ $REMOTE_ORYX == 1 ]] && ! git merge-base origin/oryx HEAD >/dev/null 2>&1; then
+  RECREATED=1
+fi
+
 if git show-ref --verify --quiet refs/heads/oryx; then
   git worktree add --quiet "$WT" oryx
-  if [[ $REMOTE_ORYX == 1 ]] && ! git -C "$WT" merge --quiet --ff-only origin/oryx 2>/dev/null; then
-    # Local and remote both have exports (e.g. a local sync and a CI sync). Both
-    # only touch layout/, and the fetch below overwrites layout/ anyway.
-    UNRELATED=""
-    if ! git merge-base oryx origin/oryx >/dev/null 2>&1; then
-      warn "local oryx and origin/oryx have unrelated histories (the remote branch was recreated); keeping both"
-      UNRELATED="--allow-unrelated-histories"
-    fi
-    # shellcheck disable=SC2086  # UNRELATED is empty or one flag
-    git -C "$WT" merge --quiet --no-edit $UNRELATED -X theirs -m "oryx: merge exports from origin" origin/oryx \
-      || die "could not reconcile the local and remote oryx branches. oryx only holds Oryx exports, so if you have nothing to keep on it:
-  git branch -D oryx && make sync"
-  fi
-elif [[ $REMOTE_ORYX == 1 ]]; then
+elif [[ $REMOTE_ORYX == 1 && $RECREATED == 0 ]]; then
   git worktree add --quiet -b oryx "$WT" origin/oryx
 else
   # First sync. Branch from the last commit that holds an untouched Oryx export
@@ -127,6 +115,22 @@ else
   [[ -n "$BASE" ]] || BASE="$(git rev-parse HEAD)"
   log "Creating the oryx branch from $(git log -1 --format='%h "%s"' "$BASE") (first sync)"
   git worktree add --quiet -b oryx "$WT" "$BASE"
+fi
+
+if [[ $REMOTE_ORYX == 1 ]] && ! git -C "$WT" merge --quiet --ff-only origin/oryx 2>/dev/null; then
+  if git -C "$WT" merge-base HEAD origin/oryx >/dev/null 2>&1; then
+    # Local and remote both have exports (e.g. a local sync and a CI sync). Both
+    # only touch layout/, and the fetch below overwrites layout/ anyway.
+    git -C "$WT" merge --quiet --no-edit -X theirs -m "oryx: merge exports from origin" origin/oryx \
+      || die "could not reconcile the local and remote oryx branches (git's message is above); $CURRENT was not changed"
+  else
+    # The remote branch was recreated. Make it an ancestor of oryx without taking its
+    # tree ('-s ours'): the tree stays ours, the fetch below overwrites layout/, and
+    # the push is an ordinary fast-forward.
+    warn "origin/oryx has unrelated histories to this repo (it was recreated on the remote); adopting it as an ancestor of oryx and keeping this tree"
+    git -C "$WT" merge --quiet --no-edit --allow-unrelated-histories -s ours -m "oryx: adopt recreated origin/oryx" origin/oryx \
+      || die "could not adopt the recreated origin/oryx (git's message is above); $CURRENT was not changed"
+  fi
 fi
 
 log "Fetching layout '$ORYX_LAYOUT_ID' ($ORYX_GEOMETRY) from Oryx"
@@ -140,7 +144,8 @@ NOTE="$(get change_note)"
 RC=0
 (
   cd "$WT"
-  git add -A layout
+  # -f: the oryx branch holds the whole export, even a file this repo's ignore rules would skip.
+  git add -Af layout
   if git diff --cached --quiet; then
     exit 10
   fi
@@ -163,6 +168,20 @@ case $RC in
   *) die "committing to the oryx branch failed" ;;
 esac
 
+# A file you have that git doesn't track (an untracked or ignored file in layout/) and that
+# the new export also adds would make the merge refuse. Stop here, before pushing or merging;
+# the export is safe on the oryx branch. Unrelated untracked files (editor swap files) are fine.
+if ! git merge-base --is-ancestor oryx HEAD; then
+  CLASH=""
+  while IFS= read -r f; do
+    if [[ -n "$f" && ( -e "$f" || -L "$f" ) ]]; then CLASH="$CLASH $f"; fi
+  done < <(git -c core.quotePath=false diff --name-only --diff-filter=A HEAD oryx -- layout)
+  if [[ -n "$CLASH" ]]; then
+    die "the new Oryx export adds file(s) that already exist here untracked or ignored:$CLASH
+The export is committed on the oryx branch. Delete or move those files (put your own code in custom/), then run sync again."
+  fi
+fi
+
 if [[ $PUSH == 1 ]]; then
   [[ $HAS_ORIGIN == 1 ]] || die "--push given but there is no 'origin' remote"
   git push --quiet origin oryx
@@ -174,9 +193,13 @@ else
   log "Merging oryx into $CURRENT"
   # No -Xignore-all-space: it made git drop whitespace-only Oryx changes (inside a
   # SEND_STRING literal, say) from a file with local edits, while the revision advanced.
-  if ! MERGE_OUT="$(git merge --quiet --no-edit -m "Merge Oryx changes: $NOTE" oryx 2>&1)"; then
-    if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
-      CONFLICTS="$(git diff --name-only --diff-filter=U)"
+  # -Xrenormalize: an older export committed with CRLF line endings merges against a
+  # new LF one as text instead of conflicting on every line.
+  if ! MERGE_OUT="$(git merge --quiet --no-edit -Xrenormalize -m "Merge Oryx changes: $NOTE" oryx 2>&1)"; then
+    [[ -z "$MERGE_OUT" ]] || printf '%s\n' "$MERGE_OUT" >&2
+    CONFLICTS="$(git -c core.quotePath=false diff --name-only --diff-filter=U)"
+    # MERGE_HEAD alone isn't a conflict: a failing merge hook or signing step leaves it too.
+    if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && [[ -n "$CONFLICTS" ]]; then
       printf '\n%sMerge conflict%s between Oryx changes and your edits in:\n%s\n\n' "$C_R" "$C_0" "$CONFLICTS" >&2
       if [[ $CI_MODE == 1 ]]; then
         git merge --abort
@@ -193,8 +216,10 @@ EOF
       fi
       exit 3
     fi
-    # Git refused before starting, so there is nothing to resolve and nothing to abort.
-    printf '%s\n' "$MERGE_OUT" >&2
+    # Not a conflict: nothing for you to resolve, so don't leave a half-made merge behind.
+    if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+      git merge --abort || true
+    fi
     HINT="The new export is committed on the oryx branch and $CURRENT is unchanged. Fix the cause above, then run sync again."
     case "$MERGE_OUT" in
       *"unrelated histories"*) HINT="$CURRENT and oryx share no history, so git won't merge them. $HINT" ;;

@@ -222,7 +222,7 @@ To check Oryx on a schedule, set the repository variable `ORYX_SYNC_SCHEDULE` to
 
 **Merge conflict on sync.** You and Oryx changed the same lines of `layout/`. Locally: `make sync`, fix the files git lists, `git commit`. Or ask Claude Code `/oryx-sync resolve`. In CI the new export is pushed to `oryx` anyway, so nothing is lost.
 
-**Sync stops with an error instead of a conflict.** The message says what to do. Untracked files in `layout/` (move them to `custom/`, or commit them), a stale `.cache/oryx-worktree` that isn't sync's own (delete it), and a branch that shares no history with `oryx` are the usual causes. If `oryx` was force-pushed or recreated on the remote, sync warns and carries on. `oryx` only ever holds Oryx exports, so `git branch -D oryx && make sync` rebuilds it.
+**Sync stops with an error instead of a conflict.** The message says what to do. The usual causes are an untracked or ignored file in `layout/` that the new export also adds (delete or move it; the export is already on the `oryx` branch), a stale `.cache/oryx-worktree` that isn't sync's own (delete it), and `oryx` and your branch sharing no history. If `oryx` was force-pushed or recreated on the remote, sync warns and carries on. In CI the **Sync from Oryx** summary tells a merge conflict (exit 3) from any other failure.
 
 **`'TAPPING_TERM' redefined`.** Oryx already sets it. `#undef` before your `#define` in `custom/config.h`.
 

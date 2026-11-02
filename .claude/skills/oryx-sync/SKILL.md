@@ -20,8 +20,9 @@ user changed in Oryx on top of the repo's own edits.
    - "Merge conflict between Oryx changes and your edits": go to step 3.
    - Any other `error:`: read the message, it names the cause and the fix (`make` exits 2
      for any failure, so go by the printed text, not the exit code). Untracked or ignored
-     files in `layout/` that the export also adds: move them to `custom/` or delete them
-     after checking they aren't needed. Never delete files yourself to get past it. It is
+     files in `layout/` that the export also adds: tell the user which files, what they
+     contain if useful, and let them choose to move them to `custom/` or delete them.
+     Never delete or move them yourself to get past it. It is
      not a conflict, so don't go to step 3.
    - A warning that `origin/oryx` was rewritten or recreated is informational; the sync
      carries on and the merge result still needs the usual build check.

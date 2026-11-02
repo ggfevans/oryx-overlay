@@ -30,6 +30,18 @@ load_config
 cd "$ROOT" || exit 1
 git rev-parse --git-dir >/dev/null 2>&1 || die "not a git repository"
 
+# Never run on top of an operation the user has in progress: the merge below would fail,
+# and sync must not abort or discard anything it didn't start itself.
+for state in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD; do
+  if git rev-parse -q --verify "$state" >/dev/null 2>&1; then
+    die "a merge, cherry-pick or revert is already in progress ($state exists); finish it ('git commit') or abandon it ('git merge --abort', 'git cherry-pick --abort' or 'git revert --abort') first"
+  fi
+done
+for dir in rebase-merge rebase-apply; do
+  if [[ -e "$(git rev-parse --git-path "$dir")" ]]; then
+    die "a rebase is already in progress; finish it ('git rebase --continue') or abandon it ('git rebase --abort') first"
+  fi
+done
 CURRENT="$(git rev-parse --abbrev-ref HEAD)"
 [[ "$CURRENT" != "oryx" ]] || die "you're on the oryx branch; check out your main branch first"
 [[ "$CURRENT" != "HEAD" ]] || die "detached HEAD; check out a branch first"
@@ -65,6 +77,7 @@ clear_stale_worktree() {
     :  # an empty leftover from an interrupted 'worktree add'
   elif [[ -f "$WT/.git" ]]; then
     gitdir="$(sed -n 's/^gitdir: //p' "$WT/.git" | head -n 1)"
+    gitdir="${gitdir%$'\r'}"  # a CRLF gitfile must not make a live path look absent
     case "$gitdir" in
       */worktrees/oryx-worktree*) ;;
       *) die "'$WT' is not a leftover oryx worktree; remove it yourself if it is safe, then run sync again" ;;
@@ -172,10 +185,13 @@ esac
 # the new export also adds would make the merge refuse. Stop here, before pushing or merging;
 # the export is safe on the oryx branch. Unrelated untracked files (editor swap files) are fine.
 if ! git merge-base --is-ancestor oryx HEAD; then
+  # What the merge would add: paths oryx gained since the common ancestor (so a file you
+  # stopped tracking, which the export didn't newly add, isn't a clash) that HEAD doesn't track.
+  MB="$(git merge-base HEAD oryx 2>/dev/null || true)"
   CLASH=""
   while IFS= read -r f; do
-    if [[ -n "$f" && ( -e "$f" || -L "$f" ) ]]; then CLASH="$CLASH $f"; fi
-  done < <(git -c core.quotePath=false diff --name-only --diff-filter=A HEAD oryx -- layout)
+    if [[ -n "$f" && ( -e "$f" || -L "$f" ) ]] && ! git cat-file -e "HEAD:$f" 2>/dev/null; then CLASH="$CLASH $f"; fi
+  done < <(git -c core.quotePath=false diff --no-renames --name-only --diff-filter=A "${MB:-HEAD}" oryx -- layout)
   if [[ -n "$CLASH" ]]; then
     die "the new Oryx export adds file(s) that already exist here untracked or ignored:$CLASH
 The export is committed on the oryx branch. Delete or move those files (put your own code in custom/), then run sync again."

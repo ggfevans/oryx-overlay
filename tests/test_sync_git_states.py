@@ -30,6 +30,9 @@ GIT = ["git", "-c", "commit.gpgsign=false"]
 FETCH_STUB = (
     'import os, shutil, sys\n'
     'out = sys.argv[sys.argv.index("--out") + 1]\n'
+    'for name in os.listdir(out):\n'
+    '    if not name.startswith("."):\n'
+    '        os.remove(os.path.join(out, name))\n'
     'for name in os.listdir(os.environ["FAKE_EXPORT"]):\n'
     '    shutil.copy(os.path.join(os.environ["FAKE_EXPORT"], name), out)\n'
     'print("revision=r2\\nqmk_version=25.0\\nchange_note=Test export")\n'
@@ -38,17 +41,24 @@ FETCH_STUB = (
 KEYMAP = 'const char x[] = "a  b";\n' + "// pad\n" * 5 + "int custom_hook;\n" + "// pad\n" * 5 + "int tail;\n"
 
 
+def write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+
+
 def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run([*GIT, "-C", str(repo), *args], capture_output=True, text=True, check=check, env={**os.environ, **GIT_ENV})
 
 
-def make_repo(dest: Path) -> Path:
+def make_repo(dest: Path, extra: dict[str, str] | None = None) -> Path:
     shutil.copytree(ROOT / "scripts", dest / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
     (dest / "scripts/oryx_fetch.py").write_text(FETCH_STUB)
     (dest / "oryx.conf").write_text("ORYX_LAYOUT_ID=default\nKEYBOARD=voyager\n")
     (dest / "layout").mkdir()
     (dest / "layout/keymap.c").write_text(KEYMAP)
     (dest / "layout/.oryx.json").write_text("{}")
+    for name, text in (extra or {}).items():
+        write(dest / name, text)
     git(dest, "init", "-q")
     git(dest, "checkout", "-qb", "main")
     git(dest, "add", "-A")
@@ -328,3 +338,105 @@ def test_whitespace_only_oryx_change_reaches_a_locally_edited_file(tmp_path):
     assert res.returncode == 0, res.stderr
     text = (repo / "layout/keymap.c").read_text()
     assert '"a b"' in text and "// [custom]" in text
+
+
+# --- merges and rebases the user already has in progress ----------------------------
+
+
+def pending_merge(repo: Path, kind: str) -> None:
+    """Leave a merge in progress whose only changes are under docs/ (which the dirty guard skips)."""
+    write(repo / "docs/keymap.md", "base\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "docs")
+    git(repo, "checkout", "-qb", "other")
+    write(repo / "docs/keymap.md", "other\n")
+    git(repo, "commit", "-qam", "docs on other")
+    git(repo, "checkout", "-q", "main")
+    if kind == "resolved":
+        write(repo / "docs/keymap.md", "main\n")
+        git(repo, "commit", "-qam", "docs on main")
+        assert git(repo, "merge", "other", check=False).returncode != 0
+        write(repo / "docs/keymap.md", "my resolution\n")
+        git(repo, "add", "docs/keymap.md")
+    elif kind == "unresolved":
+        write(repo / "docs/keymap.md", "main\n")
+        git(repo, "commit", "-qam", "docs on main")
+        assert git(repo, "merge", "other", check=False).returncode != 0
+    elif kind == "no-commit":
+        git(repo, "merge", "--no-commit", "--no-ff", "other")
+    else:
+        git(repo, "merge", "-s", "ours", "--no-commit", "other")
+    assert (repo / ".git/MERGE_HEAD").exists()
+
+
+@pytest.mark.parametrize("flags", [[], ["--ci"]])
+@pytest.mark.parametrize("kind", ["resolved", "unresolved", "no-commit", "ours"])
+def test_merge_in_progress_is_left_alone(tmp_path, kind, flags):
+    repo = make_repo(tmp_path / "repo")
+    pending_merge(repo, kind)
+    before = (git(repo, "status", "--porcelain").stdout, (repo / "docs/keymap.md").read_text(), (repo / ".git/MERGE_HEAD").read_text())
+    res = run_sync(repo, tmp_path, export_of(KEYMAP.replace("tail", "t")), *flags)
+    assert res.returncode == 1, res.stderr
+    assert "already in progress" in res.stderr and "MERGE_HEAD" in res.stderr
+    after = (git(repo, "status", "--porcelain").stdout, (repo / "docs/keymap.md").read_text(), (repo / ".git/MERGE_HEAD").read_text())
+    assert after == before
+    assert git(repo, "branch", "--list", "oryx").stdout == ""
+
+
+def test_rebase_in_progress_is_left_alone(tmp_path):
+    repo = make_repo(tmp_path / "repo")
+    write(repo / "docs/keymap.md", "base\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "docs")
+    git(repo, "checkout", "-qb", "other")
+    write(repo / "docs/keymap.md", "other\n")
+    git(repo, "commit", "-qam", "other")
+    git(repo, "checkout", "-q", "main")
+    write(repo / "docs/keymap.md", "main\n")
+    git(repo, "commit", "-qam", "main")
+    git(repo, "checkout", "-q", "other")
+    assert git(repo, "rebase", "main", check=False).returncode != 0
+    assert git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == "HEAD"
+    (repo / "docs/keymap.md").write_text("resolved\n")
+    git(repo, "add", "-A")
+    res = run_sync(repo, tmp_path, export_of(KEYMAP.replace("tail", "t")))
+    assert res.returncode == 1 and "rebase is already in progress" in res.stderr
+    assert (repo / "docs/keymap.md").read_text() == "resolved\n"
+
+
+# --- the collision check: renames, and files you stopped tracking -------------------
+
+
+def test_file_renamed_into_an_untracked_path_is_a_clash(tmp_path, origin):
+    repo = make_repo(tmp_path / "repo", {"layout/old.h": "// same\n"})
+    git(repo, "remote", "add", "origin", str(origin))
+    (repo / "layout/new.h").write_text("// mine\n")
+    res = run_sync(repo, tmp_path, {**export_of(KEYMAP.replace("tail", "t")), "new.h": "// same\n"}, "--push")
+    assert res.returncode == 1, res.stderr
+    assert "layout/new.h" in res.stderr
+    assert (repo / "layout/new.h").read_text() == "// mine\n"
+    assert git(origin, "branch", "--list", "oryx").stdout == ""  # nothing was pushed
+
+
+def test_file_you_stopped_tracking_is_not_a_clash(tmp_path):
+    repo = make_repo(tmp_path / "repo", {"layout/foo.h": "// oryx\n"})
+    git(repo, "rm", "-q", "--cached", "layout/foo.h")
+    (repo / ".git/info/exclude").write_text("layout/foo.h\n")
+    git(repo, "commit", "-qm", "stop tracking foo.h")
+    res = run_sync(repo, tmp_path, {**export_of(KEYMAP.replace("tail", "t")), "foo.h": "// oryx\n"})
+    assert res.returncode == 0, res.stderr
+    assert (repo / "layout/foo.h").read_text() == "// oryx\n"
+
+
+def test_crlf_gitfile_of_a_live_worktree_is_left_alone(tmp_path):
+    cache = tmp_path / "shared-cache"
+    a = make_repo(tmp_path / "a")
+    git(a, "branch", "oryx")
+    git(a, "worktree", "add", "-q", str(cache / "oryx-worktree"), "oryx")
+    gitfile = cache / "oryx-worktree/.git"
+    gitfile.write_bytes(gitfile.read_bytes().replace(b"\n", b"\r\n"))
+    (cache / "oryx-worktree/uncommitted.txt").write_text("precious")
+    b = make_repo(tmp_path / "b")
+    res = run_sync(b, tmp_path, export_of(KEYMAP.replace("tail", "t")), cache=cache)
+    assert res.returncode == 1
+    assert (cache / "oryx-worktree/uncommitted.txt").read_text() == "precious"

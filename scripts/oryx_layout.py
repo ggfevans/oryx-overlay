@@ -313,17 +313,27 @@ KEYPAD = {
 LOCALE_FILE = Path(__file__).with_name("locale_legends.json")
 
 
+def _str_map(value: object) -> bool:
+    return isinstance(value, dict) and all(isinstance(v, str) for v in value.values())
+
+
 def load_locales(path: Path = LOCALE_FILE) -> tuple[dict, dict]:
     """(legends, layouts) from QMK's keymap_*.h, see scripts/gen_locale_legends.py.
     legends: {"DE": {"Z": "Z", "EXLM": "!", ...}}, by keycode name.
     layouts: {"DE": [{"Y": "Z", "S(1)": "!", ...}, ...]}, by value, one map per header.
-    Empty if the table can't be read: locale keys then fall back to their name."""
+    Empty if the table can't be read or has the wrong shape: locale keys then fall
+    back to their name."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         legends, layouts = data["legends"], data["layouts"]
     except (OSError, ValueError, KeyError, TypeError):
         return {}, {}
-    return (legends, layouts) if isinstance(legends, dict) and isinstance(layouts, dict) else ({}, {})
+    if not isinstance(legends, dict) or not isinstance(layouts, dict):
+        return {}, {}
+    shapes_ok = all(map(_str_map, legends.values())) and all(
+        isinstance(maps, list) and maps and all(map(_str_map, maps)) for maps in layouts.values()
+    )
+    return (legends, layouts) if shapes_ok else ({}, {})
 
 
 LOCALES, LAYOUTS = load_locales()

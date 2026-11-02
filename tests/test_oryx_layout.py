@@ -670,6 +670,29 @@ def test_load_locales_survives_a_bad_table(tmp_path, content):
     assert ol.load_locales(path) == ({}, {})
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"legends": [], "layouts": {}}',
+        '{"legends": {"DE": []}, "layouts": {}}',
+        '{"legends": {"DE": {"Z": 1}}, "layouts": {}}',
+        '{"legends": {}, "layouts": []}',
+        '{"legends": {}, "layouts": {"DE": {}}}',
+        '{"legends": {}, "layouts": {"DE": []}}',
+        '{"legends": {}, "layouts": {"DE": [1]}}',
+        '{"legends": {}, "layouts": {"DE": [{"Y": 1}]}}',
+    ],
+)
+def test_wrong_shape_table_keeps_the_old_legend(tmp_path, monkeypatch, content):
+    path = tmp_path / "locale_legends.json"
+    path.write_text(content)
+    tables = ol.load_locales(path)
+    assert tables == ({}, {})
+    monkeypatch.setattr(ol, "LOCALES", tables[0])
+    monkeypatch.setattr(ol, "LAYOUTS", tables[1])
+    assert labeller_with_i18n("#define DE_Z KC_Y\n").legend("DE_Z").text() == "De Z"
+
+
 # The shape of the i18n.h Oryx ships beside keymap.c: its own names, one per line.
 I18N_H = """\
 #define DE_UE KC_LBRC
@@ -865,8 +888,8 @@ def test_legend_from_header_comment(comment, legend):
 
 
 def test_generator_prefers_the_plain_header_and_a_real_legend(tmp_path):
-    (tmp_path / "keymap_french.h").write_text("#define FR_EACU KC_2 // é\n#define FR_NBSP KC_3\n")
-    (tmp_path / "keymap_canadian_french.h").write_text("#define FR_EACU KC_SLSH // É\n")
+    (tmp_path / "keymap_french.h").write_text("#define FR_EACU KC_2 // é\n#define FR_NBSP KC_3\n", encoding="utf-8")
+    (tmp_path / "keymap_canadian_french.h").write_text("#define FR_EACU KC_SLSH // É\n", encoding="utf-8")
     (tmp_path / "keymap_nordic.h").write_text("#define NO_QUOT KC_RBRC // a sentence about this umlaut key\n")
     (tmp_path / "keymap_norwegian.h").write_text("#define NO_QUOT KC_BSLS // '\n#define QMK_NO_VERSION 1 // x\n")
     (tmp_path / "keymap_us.h").write_text("#define KC_TILD S(KC_GRAVE) // ~\n")

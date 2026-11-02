@@ -126,6 +126,7 @@ class Keymap:
     dual_funcs: dict[str, tuple[str, str]] = field(default_factory=dict)
     ledmap: dict[int, list[tuple[int, int, int]]] = field(default_factory=dict)
     tri_layers: list[tuple[str, str, str]] = field(default_factory=list)  # update_tri_layer_state(a, b, c)
+    i18n: dict[str, str] = field(default_factory=dict)  # name -> value, from the i18n.h beside keymap.c
 
     def layer_index(self, arg: str) -> int | None:
         """Layer number for a layer argument: a digit, or a name such as _LOWER."""
@@ -257,6 +258,9 @@ MOD_ALIASES = {
     "LCS": {"ctrl", "shift"}, "RCS": {"ctrl", "shift"}, "LAG": {"alt", "gui"}, "RAG": {"alt", "gui"},
     "LCG": {"ctrl", "gui"}, "RCG": {"ctrl", "gui"}, "LSG": {"shift", "gui"}, "RSG": {"shift", "gui"},
     "SGUI": {"shift", "gui"}, "SCMD": {"shift", "gui"}, "SWIN": {"shift", "gui"},
+    "LCAG": {"ctrl", "alt", "gui"}, "RCAG": {"ctrl", "alt", "gui"}, "SAGR": {"shift", "alt"},
+    # Only as mod-taps (CTL_T(kc), ...)
+    "CTL": {"ctrl"}, "SFT": {"shift"}, "ALT": {"alt"}, "OPT": {"alt"}, "GUI": {"gui"}, "CMD": {"gui"}, "WIN": {"gui"},
 }
 MOD_KEYS = {
     "LEFT_SHIFT": "shift", "LSFT": "shift", "LSHIFT": "shift", "RIGHT_SHIFT": "shift", "RSFT": "shift",
@@ -306,6 +310,73 @@ KEYPAD = {
 }
 
 
+LOCALE_FILE = Path(__file__).with_name("locale_legends.json")
+
+
+def _str_map(value: object) -> bool:
+    return isinstance(value, dict) and all(isinstance(v, str) for v in value.values())
+
+
+def load_locales(path: Path = LOCALE_FILE) -> tuple[dict, dict]:
+    """(legends, layouts) from QMK's keymap_*.h, see scripts/gen_locale_legends.py.
+    legends: {"DE": {"Z": "Z", "EXLM": "!", ...}}, by keycode name.
+    layouts: {"DE": [{"Y": "Z", "S(1)": "!", ...}, ...]}, by value, one map per header.
+    Empty if the table can't be read or has the wrong shape: locale keys then fall
+    back to their name."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        legends, layouts = data["legends"], data["layouts"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}, {}
+    if not isinstance(legends, dict) or not isinstance(layouts, dict):
+        return {}, {}
+    shapes_ok = all(map(_str_map, legends.values())) and all(
+        isinstance(maps, list) and maps and all(map(_str_map, maps)) for maps in layouts.values()
+    )
+    return (legends, layouts) if shapes_ok else ({}, {})
+
+
+LOCALES, LAYOUTS = load_locales()
+
+
+def canon_value(value: str) -> str:
+    """One spelling for a locale define's value: "S(KC_MINS)" -> "S(MINS)"."""
+    value = re.sub(r"\s|\bKC_", "", value)
+    return re.sub(r"\bRALT\(", "ALGR(", re.sub(r"\b[LR]SFT\(", "S(", value))
+
+
+def parse_i18n(text: str) -> dict[str, str]:
+    """The `#define DE_UE KC_LBRC` lines of the i18n.h Oryx ships beside keymap.c."""
+    return {name: value.strip() for name, value in re.findall(r"^[ \t]*#define[ \t]+([A-Z0-9]+_\w+)[ \t]+([^\n/]+)", text, re.M)}
+
+
+def read_i18n(keymap: str) -> dict[str, str]:
+    """The i18n.h beside a keymap.c path or REF:path; exports before it have none."""
+    ref, sep, path = keymap.rpartition(":")
+    try:
+        return parse_i18n(read_source(f"{ref}{sep}{Path(path).with_name('i18n.h')}"))
+    except (SystemExit, OSError, UnicodeDecodeError):
+        return {}
+
+
+def i18n_legends(i18n: dict[str, str]) -> dict[str, str]:
+    """Legends for an i18n.h. Oryx has its own names, so go by each define's value, in
+    the header of that prefix that agrees best with what the names say (FR_ is four
+    layouts); a tie goes to the first, the plain national one. KC_ macros have no layout."""
+    out: dict[str, str] = {}
+    values = {name: canon_value(value) for name, value in i18n.items()}
+    for prefix in {name.partition("_")[0] for name in i18n} & LAYOUTS.keys():
+        ours = {name: value for name, value in values.items() if name.startswith(f"{prefix}_")}
+        names = LOCALES.get(prefix, {})
+
+        def agreement(layout: dict[str, str]) -> int:
+            return sum(value in layout and layout[value] == names.get(name[len(prefix) + 1 :]) for name, value in ours.items())
+
+        best = max(LAYOUTS[prefix], key=agreement)
+        out.update({name: best[value] for name, value in ours.items() if value in best})
+    return out
+
+
 def _trim(text: str, room: int) -> str:
     """Fit `text` into `room` characters: keep its start, and a trailing number if
     it has one ("Layer 10" -> "Laye…10", "Navigation" -> "Navig…")."""
@@ -322,7 +393,7 @@ class Legend:
     tap: str = ""
     hold: str = ""
     kind: str = ""  # "", trans, none, layer, mod, special
-    # Layer keys that are not tap-hold (TG, TO, OSL, DF, TT, MO): `func` is the QMK
+    # Layer keys that are not tap-hold (TG, TO, OSL, DF, TT, MO, LM): `func` is the QMK
     # function, `note` a short drawn label, `desc` the sentence the viewer shows.
     func: str = ""
     note: str = ""
@@ -367,6 +438,7 @@ class Labeller:
         self.km = km
         self.mods = MOD_TEXT[style]
         self.names = {l.index: l.name or f"Layer {l.index}" for l in km.layers}
+        self.i18n = i18n_legends(km.i18n)
 
     def layer(self, arg: str) -> str:
         idx = self.km.layer_index(arg)
@@ -395,6 +467,11 @@ class Labeller:
         kc = kc.strip()
         if kc in BASIC:
             return BASIC[kc]
+        if kc in self.i18n:
+            return self.i18n[kc]
+        prefix, _, name = kc.partition("_")
+        if name in LOCALES.get(prefix, {}):
+            return LOCALES[prefix][name]
         kc = kc.removeprefix("KC_")
         if kc in MOD_KEYS:
             return self.mods[MOD_KEYS[kc]]
@@ -432,8 +509,13 @@ class Labeller:
             return Legend(name, "", "layer", fn, note, desc.format(name))
         if fn == "LT" and len(args) == 2:
             return Legend(self.legend(args[1]).text(), self.layer(args[0]), "layer")
+        if fn == "LM" and len(args) == 2:
+            name, mods = self.layer(args[0]), self.modtext(self.modset(args[1])) or args[1].strip()
+            return Legend(name, "", "layer", fn, f"+{mods}", f"Hold for {name} with {mods}.")
         if fn == "MT" and len(args) == 2:
             return Legend(self.legend(args[1]).text(), self.modtext(self.modset(args[0])), "mod")
+        if fn == "SH_T" and len(args) == 1:  # swap-hands tap, the one `_T` that isn't a mod
+            return Legend(self.legend(args[0]).text(), "Swap Hands", "mod")
         if fn.endswith("_T") and len(args) == 1:
             return Legend(self.legend(args[0]).text(), self.modtext(self.modset(fn[:-2])), "mod")
         if fn == "OSM" and len(args) == 1:
@@ -464,7 +546,7 @@ class Labeller:
         if not c:
             return []
         fn, args = c
-        if (fn in LAYER_FUNCS and len(args) == 1) or (fn == "LT" and len(args) == 2):
+        if (fn in LAYER_FUNCS and len(args) == 1) or (fn in ("LT", "LM") and len(args) == 2):
             idx = self.km.layer_index(args[0])
             if idx is not None:
                 return [(fn, idx)]
@@ -675,6 +757,7 @@ def access_map(km: Keymap, lab: Labeller, geo: Geometry) -> list[dict]:
 FUNC_WORDS = {
     "MO": "hold the layer key",
     "LT": "hold the layer key",
+    "LM": "hold the layer key",
     "TT": "hold or double-tap the layer key",
     "OSL": "tap the one-shot key",
     "TG": "toggle key",
@@ -723,7 +806,7 @@ def render_markdown(km: Keymap, lab: Labeller, geo: Geometry, meta: dict, svg_na
             lg = lab.legend(raw)
             if lg.hold or lg.desc or lg.kind == "special" or raw in km.dual_funcs:
                 where = geo.pos.get(ki, f"#{ki}")
-                special.append(f"| {_md_cell(where)} | {_md_cell(lg.text())} | `{raw}` | {_md_cell(lg.desc)} |")
+                special.append(f"| {_md_cell(where)} | {_md_cell(lg.text())} | `{_md_cell(raw)}` | {_md_cell(lg.desc)} |")
         if special:
             out += ["| Pos | Legend | Keycode | Does |", "|---|---|---|---|", *special, ""]
     return "\n".join(out).rstrip() + "\n"
@@ -752,7 +835,7 @@ def drawer_yaml(km: Keymap, lab: Labeller, geo: Geometry, colours: dict[int, dic
     for layer in km.layers:
         for ki, raw in enumerate(layer.keys):
             for fn, tgt in lab.targets(raw):
-                if fn in ("MO", "LT", "TT", "OSL") and tgt != layer.index:
+                if fn in ("MO", "LT", "LM", "TT", "OSL") and tgt != layer.index:
                     held.setdefault(tgt, set()).add(ki)
 
     css = [SVG_STYLE]
@@ -850,6 +933,7 @@ def load_json(path: str | None) -> dict:
 
 def load_all(args) -> tuple[Keymap, Labeller, Geometry, dict, dict]:
     km = parse_keymap(read_source(args.keymap))
+    km.i18n = read_i18n(args.keymap)
     meta = load_json(args.meta)
     assign_layer_names(km, meta)
     info = load_json(args.info)
@@ -1093,6 +1177,7 @@ def cmd_render(args) -> int:
 def cmd_diff(args) -> int:
     old = parse_keymap(read_source(args.old))
     new = parse_keymap(read_source(args.new))
+    old.i18n, new.i18n = read_i18n(args.old), read_i18n(args.new)
     meta = load_json(args.meta)
     assign_layer_names(old, meta)
     assign_layer_names(new, meta)

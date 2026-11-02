@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import shutil
+import subprocess
 import sys
+import unicodedata
 import zipfile
 from pathlib import Path
 
@@ -17,6 +20,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
+import gen_locale_legends as gen  # noqa: E402
 import oryx_fetch  # noqa: E402
 import oryx_layout as ol  # noqa: E402
 
@@ -186,6 +190,24 @@ def test_dual_function_keys(four_layers):
         ("pc", "MT(MOD_LSFT | MOD_LCTL | MOD_LALT, KC_F)", "F/Meh"),
         ("pc", "ST_MACRO_3", "Macro 3"),
         ("pc", "TD(DANCE_2)", "Dance 2"),
+        ("pc", "LM(2, MOD_LSFT)", "LM Layer 2"),
+        # Locale keycodes: the character each key produces, from keymap_german.h etc.
+        ("pc", "DE_Z", "Z"),
+        ("pc", "DE_UDIA", "Ü"),
+        ("pc", "DE_EXLM", "!"),  # S(DE_1)
+        ("pc", "DE_AT", "@"),  # ALGR(DE_Q)
+        ("pc", "DE_BSLS", "\\"),  # the header spells it "(backslash)"
+        ("pc", "DE_CIRC", "^"),  # "^ (dead)"
+        ("pc", "FR_A", "A"),
+        ("pc", "FR_EACU", "é"),  # keymap_french.h, not keymap_canadian_french.h's É
+        ("pc", "FR_EXLM", "!"),
+        ("pc", "MT(MOD_LCTL, DE_Z)", "Z/Ctrl"),
+        ("pc", "LT(1, FR_A)", "A/Layer 1"),
+        ("pc", "LCTL(DE_Z)", "Ctrl+Z"),
+        # A prefix no locale uses, and keycodes that only look like a locale.
+        ("pc", "XX_Z", "Xx Z"),
+        ("pc", "CM_TOGG", "Cm Togg"),  # combo toggle, not Colemak (CM_*)
+        ("pc", "EE_CLR", "Ee Clr"),  # EEPROM clear, not Estonian (EE_*)
     ],
 )
 def test_legends(four_layers, style, raw, text):
@@ -207,6 +229,42 @@ def test_layer_keys_are_not_tap_hold(four_layers, raw, desc):
     lg = ol.Labeller(four_layers).legend(raw)
     assert lg.kind == "layer" and lg.hold == "" and lg.desc == desc
     assert "/" not in lg.text()
+
+
+def test_lm_is_a_layer_key(four_layers):
+    lg = ol.Labeller(four_layers).legend("LM(2, MOD_LCTL | MOD_LSFT)")
+    assert (lg.tap, lg.hold, lg.kind, lg.func) == ("Layer 2", "", "layer", "LM")
+    assert lg.note == "+Ctrl+Shift"
+    assert lg.desc == "Hold for Layer 2 with Ctrl+Shift."
+
+
+@pytest.mark.parametrize(
+    "fn,hold",
+    [
+        ("LCAG_T", "Ctrl+Alt+Super"),
+        ("RCAG_T", "Ctrl+Alt+Super"),
+        ("SAGR_T", "Alt+Shift"),
+        ("CTL_T", "Ctrl"),
+        ("SFT_T", "Shift"),
+        ("ALT_T", "Alt"),
+        ("OPT_T", "Alt"),
+        ("GUI_T", "Super"),
+        ("CMD_T", "Super"),
+        ("WIN_T", "Super"),
+    ],
+)
+def test_mod_tap_aliases_keep_their_hold(four_layers, fn, hold):
+    lg = ol.Labeller(four_layers).legend(f"{fn}(KC_A)")
+    assert (lg.tap, lg.hold, lg.kind) == ("A", hold, "mod")
+
+
+def test_swap_hands_tap_keeps_its_hold(four_layers):
+    lg = ol.Labeller(four_layers).legend("SH_T(KC_A)")
+    assert (lg.tap, lg.hold) == ("A", "Swap Hands")
+
+
+def test_lcag_modifies_a_key(four_layers):
+    assert ol.Labeller(four_layers).legend("LCAG(KC_A)").text() == "Ctrl+Alt+Super+A"
 
 
 def test_tap_hold_layer_keys_keep_hold(four_layers):
@@ -278,6 +336,45 @@ def test_lint_flags_trap_and_dangling():
     issues = ol.lint(km, ol.Labeller(km))
     assert ("error", "Layer 0: `MO(9)` points at layer 9, which does not exist") in issues
     assert any("Layer 2: entered with TG but has no TO/TG key to leave" in m for _, m in issues)
+
+
+def test_lm_reaches_its_layer():
+    base = base_keys()
+    base[0] = "LM(1, MOD_LCTL)"
+    base[40] = "KC_SPACE"  # drop the fixture's LT(1, ...), so only LM reaches layer 1
+    base[48] = "KC_ESCAPE"  # and its TG(2)
+    km = ol.parse_keymap(make_keymap([base, filler(), filler()]))
+    ol.assign_layer_names(km, None)
+    lab = ol.Labeller(km)
+    geo = ol.Geometry.build(make_info(), km)
+    assert lab.targets("LM(1, MOD_LCTL)") == [("LM", 1)]
+    text = "\n".join(m for _, m in ol.lint(km, lab))
+    assert "Layer 1: no key reaches" not in text
+    assert "Layer 1: entered with" not in text  # held, so there is nothing to leave
+    assert "Layer 2: no key reaches" in text
+    access = {a["name"]: a["how"] for a in ol.access_map(km, lab, geo)}
+    assert access["Layer 1"] == ["hold the layer key on Layer 0 (L0.0)"]
+    # The key that holds a layer is marked on that layer's drawing, as for MO.
+    yaml_text, _ = ol.drawer_yaml(km, lab, geo, {})
+    assert "held" in yaml_text.split('"Layer 1":')[1].splitlines()[1]
+
+
+def test_multi_mod_keycode_does_not_split_its_table_row():
+    base = base_keys()
+    base[0] = "LM(1, MOD_LCTL | MOD_LSFT)"
+    km = ol.parse_keymap(make_keymap([base, filler()]))
+    ol.assign_layer_names(km, None)
+    md = ol.render_markdown(km, ol.Labeller(km), ol.Geometry.build(make_info(), km), {}, None)
+    assert "| `LM(1, MOD_LCTL \\| MOD_LSFT)` | Hold for Layer 1 with Ctrl+Shift. |" in md
+
+
+def test_lm_pointing_at_a_missing_layer_is_an_error():
+    base = base_keys()
+    base[0] = "LM(9, MOD_LCTL)"
+    km = ol.parse_keymap(make_keymap([base, filler()]))
+    ol.assign_layer_names(km, None)
+    issues = ol.lint(km, ol.Labeller(km))
+    assert ("error", "Layer 0: `LM(9, MOD_LCTL)` points at layer 9, which does not exist") in issues
 
 
 def test_access_map(four_layers):
@@ -416,6 +513,17 @@ def test_extract_source(tmp_path):
     assert not (out / "stale.h").exists() and (out / ".gitkeep").exists()
 
 
+def test_extract_source_keeps_i18n_h(tmp_path):
+    """keymap.c includes it, so a recent export doesn't build without it."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("x_source/keymap.c", '#include "i18n.h"\n')
+        zf.writestr("x_source/i18n.h", I18N_H)
+    out = tmp_path / "layout"
+    assert oryx_fetch.extract_source(buf.getvalue(), out) == ["i18n.h", "keymap.c"]
+    assert (out / "i18n.h").read_text() == I18N_H
+
+
 def test_extract_source_rejects_escapes(tmp_path):
     buf = io.BytesIO()
     outside = tmp_path / "outside.txt"
@@ -546,3 +654,314 @@ def test_render_draws_layer_named_with_leading_dash(tmp_path):
     for name in ("keymap.svg", "keymap-base.svg", "index.html"):
         assert (out / name).exists()
     assert "-Nav" in (out / "index.html").read_text(encoding="utf-8")
+
+
+def test_locale_table_missing_falls_back(four_layers, monkeypatch):
+    """Without the table a locale key keeps the old title-cased legend: never a crash."""
+    monkeypatch.setattr(ol, "LOCALES", {})
+    assert ol.Labeller(four_layers).legend("DE_Z").text() == "De Z"
+
+
+@pytest.mark.parametrize("content", [None, "not json", "[]", '{"legends": 1}', '{"legends": {}, "layouts": 1}'])
+def test_load_locales_survives_a_bad_table(tmp_path, content):
+    path = tmp_path / "locale_legends.json"
+    if content is not None:
+        path.write_text(content)
+    assert ol.load_locales(path) == ({}, {})
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"legends": [], "layouts": {}}',
+        '{"legends": {"DE": []}, "layouts": {}}',
+        '{"legends": {"DE": {"Z": 1}}, "layouts": {}}',
+        '{"legends": {}, "layouts": []}',
+        '{"legends": {}, "layouts": {"DE": {}}}',
+        '{"legends": {}, "layouts": {"DE": []}}',
+        '{"legends": {}, "layouts": {"DE": [1]}}',
+        '{"legends": {}, "layouts": {"DE": [{"Y": 1}]}}',
+    ],
+)
+def test_wrong_shape_table_keeps_the_old_legend(tmp_path, monkeypatch, content):
+    path = tmp_path / "locale_legends.json"
+    path.write_text(content)
+    tables = ol.load_locales(path)
+    assert tables == ({}, {})
+    monkeypatch.setattr(ol, "LOCALES", tables[0])
+    monkeypatch.setattr(ol, "LAYOUTS", tables[1])
+    assert labeller_with_i18n("#define DE_Z KC_Y\n").legend("DE_Z").text() == "De Z"
+
+
+# The shape of the i18n.h Oryx ships beside keymap.c: its own names, one per line.
+I18N_H = """\
+#define DE_UE KC_LBRC
+#define DE_AE KC_QUOT
+#define DE_Z KC_Y
+#define DE_LESS KC_NUBS
+#define DE_MORE S(KC_NUBS)
+#define DE_QST S(KC_MINS)
+#define DE_AT ALGR(KC_Q)
+#define DE_SHOUT S(KC_1)
+#define KC_MAC_COPY LGUI(KC_C)
+"""
+
+
+def labeller_with_i18n(text: str) -> ol.Labeller:
+    km = ol.parse_keymap(make_keymap([base_keys()]))
+    km.i18n = ol.parse_i18n(text)
+    return ol.Labeller(km)
+
+
+@pytest.mark.parametrize(
+    "raw,text",
+    [
+        ("DE_UE", "Ü"),
+        ("DE_AE", "Ä"),  # in the table DE_AE is the Æ of keymap_german_mac_iso.h
+        ("DE_Z", "Z"),
+        ("DE_LESS", "<"),
+        ("DE_MORE", ">"),
+        ("DE_QST", "?"),
+        ("DE_AT", "@"),
+        ("DE_SHOUT", "!"),  # a name no header or alias knows: only the value says what it types
+        ("MT(MOD_LCTL, DE_UE)", "Ü/Ctrl"),
+        ("KC_MAC_COPY", "Mac Copy"),  # not a locale key: i18n.h also holds Oryx macros
+        ("DE_SS", "ß"),  # not in this i18n.h
+    ],
+)
+def test_i18n_h_values_give_the_legend(raw, text):
+    assert labeller_with_i18n(I18N_H).legend(raw).text() == text
+
+
+def test_i18n_h_picks_the_header_that_matches_its_values():
+    """FR_ is four layouts: the values say this one is Canadian, so FR_EACU is its É."""
+    lab = labeller_with_i18n("#define FR_EACU KC_SLSH\n#define FR_Q KC_Q\n#define FR_W KC_W\n#define FR_A KC_A\n#define FR_Z KC_Z\n")
+    assert lab.legend("FR_EACU").text() == "É"
+    assert lab.legend("FR_A").text() == "A"
+    french = labeller_with_i18n("#define FR_EACU KC_2\n#define FR_Q KC_A\n#define FR_A KC_Q\n")
+    assert french.legend("FR_EACU").text() == "é"
+
+
+def test_i18n_h_value_with_long_modifier_names():
+    lab = labeller_with_i18n("#define DE_X1 LSFT(KC_1)\n#define DE_X2 RALT(KC_Q)\n#define DE_X3 RSFT(KC_1)\n")
+    assert [lab.legend(k).text() for k in ("DE_X1", "DE_X2", "DE_X3")] == ["!", "@", "!"]
+
+
+@pytest.mark.parametrize(
+    "junk",
+    ["", "not a header\n\x00\n", "#define\n#define DE_UE\n#define DE_UE (((\n#define DE_UE KC_NOPE(\n", "#define ZZ_Q KC_A\n"],
+)
+def test_junk_i18n_h_falls_back(junk):
+    lab = labeller_with_i18n(junk)
+    assert lab.legend("DE_UE").text() == "Ü"  # the alias still knows it
+    assert lab.legend("ZZ_Q").text() == "Zz Q"
+
+
+def test_read_i18n_finds_it_beside_keymap(tmp_path):
+    (tmp_path / "keymap.c").write_text("")
+    assert ol.read_i18n(str(tmp_path / "keymap.c")) == {}
+    (tmp_path / "i18n.h").write_text(I18N_H)
+    assert ol.read_i18n(str(tmp_path / "keymap.c"))["DE_AT"] == "ALGR(KC_Q)"
+    (tmp_path / "i18n.h").write_bytes(b"\xff\xfe#define")
+    assert ol.read_i18n(str(tmp_path / "keymap.c")) == {}
+
+
+def test_read_i18n_at_a_git_ref(tmp_path, monkeypatch):
+    env = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "layout").mkdir()
+    (tmp_path / "layout/keymap.c").write_text("")
+    subprocess.run(["git", "-C", str(tmp_path), *env, "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), *env, "commit", "-qm", "no i18n.h"], check=True)
+    (tmp_path / "layout/i18n.h").write_text(I18N_H)
+    subprocess.run(["git", "-C", str(tmp_path), *env, "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), *env, "commit", "-qm", "i18n.h"], check=True)
+    monkeypatch.chdir(tmp_path)
+    assert ol.read_i18n("HEAD:layout/keymap.c")["DE_UE"] == "KC_LBRC"
+    assert ol.read_i18n("HEAD~1:layout/keymap.c") == {}
+
+
+def oryx_only_keymap() -> str:
+    """A keymap with DE_SHOUT, which only an i18n.h can explain."""
+    keys = base_keys()
+    keys[0] = "DE_SHOUT"
+    return make_keymap([keys, filler()])
+
+
+def test_render_cli_uses_i18n_h_beside_keymap(tmp_path):
+    km = tmp_path / "keymap.c"
+    km.write_text(oryx_only_keymap())
+    (tmp_path / "i18n.h").write_text("#define DE_SHOUT S(KC_1)\n")
+    info = tmp_path / "info.json"
+    info.write_text(json.dumps(make_info()))
+    assert ol.main(["render", "--keymap", str(km), "--meta", "/x", "--info", str(info), "--out", str(tmp_path / "docs"), "--no-svg"]) == 0
+    md = (tmp_path / "docs" / "keymap.md").read_text(encoding="utf-8")
+    assert "De Shout" not in md
+    assert "[     !     ]" in md.split("```text")[1]
+
+
+def test_render_cli_without_i18n_h_humanises(tmp_path):
+    km = tmp_path / "keymap.c"
+    km.write_text(oryx_only_keymap())
+    assert ol.main(["render", "--keymap", str(km), "--meta", "/x", "--out", str(tmp_path / "docs"), "--no-svg"]) == 0
+    assert "De Shout" in (tmp_path / "docs" / "keymap.md").read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def i18n_history(tmp_path, monkeypatch):
+    """A repo where DE_SHOUT changes meaning: no i18n.h, then `!`, then `"`, same keymap.c."""
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-C", str(tmp_path), *args], check=True)
+
+    git("init", "-q")
+    layout = tmp_path / "layout"
+    layout.mkdir()
+    (layout / "keymap.c").write_text(oryx_only_keymap())
+    git("add", "-A")
+    git("commit", "-qm", "no i18n.h")
+    for value in ("S(KC_1)", "S(KC_2)"):
+        (layout / "i18n.h").write_text(f"#define DE_SHOUT {value}\n")
+        git("add", "-A")
+        git("commit", "-qm", value)
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
+
+
+def test_diff_reads_each_revisions_own_i18n_h(i18n_history, capsys):
+    ol.main(["diff", "HEAD~1:layout/keymap.c", "HEAD:layout/keymap.c", "--meta", "/x"])
+    assert capsys.readouterr().out.strip() == '- **Layer 0** (L0.0): `!` → `"`'
+
+
+def test_diff_old_ref_against_working_tree(i18n_history, capsys):
+    ol.main(["diff", "HEAD~1:layout/keymap.c", "layout/keymap.c", "--meta", "/x"])
+    assert capsys.readouterr().out.strip() == '- **Layer 0** (L0.0): `!` → `"`'
+
+
+def test_diff_revision_without_i18n_h_humanises(i18n_history, capsys):
+    ol.main(["diff", "HEAD~2:layout/keymap.c", "HEAD~1:layout/keymap.c", "--meta", "/x"])
+    assert capsys.readouterr().out.strip() == "- **Layer 0** (L0.0): `De Shout` → `!`"
+
+
+@pytest.mark.parametrize(
+    "raw,text",
+    [
+        # Names from QMK's older headers, which old exports (no i18n.h) still use.
+        ("DE_UE", "Ü"), ("DE_AE", "Ä"), ("DE_OE", "Ö"), ("DE_LESS", "<"), ("DE_MORE", ">"), ("DE_QST", "?"),
+        ("DE_DQOT", '"'), ("DE_PARA", "§"), ("DE_RING", "°"), ("DE_SQ2", "²"), ("DE_SQ3", "³"),
+        ("FR_AMP", "&"), ("FR_APOS", "'"), ("FR_LESS", "<"), ("FR_GRTR", ">"), ("FR_OVRR", "°"),
+        ("FR_UMLT", "¨"), ("FR_MU", "µ"), ("FR_BULT", "¤"),
+    ],
+)
+def test_older_names_without_i18n_h(four_layers, raw, text):
+    assert four_layers.i18n == {}
+    assert ol.Labeller(four_layers).legend(raw).text() == text
+
+
+def test_no_table_legend_is_a_bare_combining_mark():
+    bare = [f"{p}_{k}" for p, keys in ol.LOCALES.items() for k, v in keys.items() if all(unicodedata.combining(c) for c in v)]
+    assert bare == []
+    assert ol.LOCALES["FR"]["DGRV"] == "`"  # the spacing form in keymap_canadian_french.h
+
+
+QMK_TREE = Path(__file__).resolve().parents[1] / ".cache" / gen.FIRMWARE
+needs_tree = pytest.mark.skipif(not QMK_TREE.is_dir(), reason="pinned QMK tree not cached")
+
+
+@pytest.mark.parametrize(
+    "comment,legend",
+    [
+        ("Z", "Z"),
+        ("^ (dead)", "^"),
+        ("(backslash)", "\\"),
+        ("(backslash, not physically present)", "\\"),
+        ("| (not physically present)", "|"),
+        ("µ (dead Greek key)", "µ"),
+        ("Muhenkan (無変換)", None),  # too long to draw: the generator uses the name
+        ("(non-breaking space)", None),
+        ("\xad (soft hyphen)", None),  # invisible
+        ("\u030f (dead)", None),  # a combining mark has nothing to sit on, and no width in a grid
+        ("", None),
+    ],
+)
+def test_legend_from_header_comment(comment, legend):
+    assert gen.legend(comment) == legend
+
+
+def test_generator_prefers_the_plain_header_and_a_real_legend(tmp_path):
+    (tmp_path / "keymap_french.h").write_text("#define FR_EACU KC_2 // é\n#define FR_NBSP KC_3\n", encoding="utf-8")
+    (tmp_path / "keymap_canadian_french.h").write_text("#define FR_EACU KC_SLSH // É\n", encoding="utf-8")
+    (tmp_path / "keymap_nordic.h").write_text("#define NO_QUOT KC_RBRC // a sentence about this umlaut key\n")
+    (tmp_path / "keymap_norwegian.h").write_text("#define NO_QUOT KC_BSLS // '\n#define QMK_NO_VERSION 1 // x\n")
+    (tmp_path / "keymap_us.h").write_text("#define KC_TILD S(KC_GRAVE) // ~\n")
+    assert gen.table(tmp_path) == {
+        "FR": {"EACU": "é", "NBSP": "NBSP"},
+        "NO": {"QUOT": "'"},
+    }
+
+
+def test_generator_prefers_a_spacing_legend(tmp_path):
+    (tmp_path / "keymap_french_afnor.h").write_text("#define FR_DGRV KC_Q // \u030f (dead)\n", encoding="utf-8")
+    (tmp_path / "keymap_canadian_french.h").write_text("#define FR_DGRV KC_W // ` (dead)\n#define FR_DCMM KC_E // \u0326 (dead)\n", encoding="utf-8")
+    assert gen.table(tmp_path) == {"FR": {"DGRV": "`", "DCMM": "DCMM"}}
+
+
+def test_generator_maps_expanded_values_per_header(tmp_path):
+    (tmp_path / "keymap_german.h").write_text(
+        "#define DE_Z    KC_Y    // Z\n#define DE_1 KC_1 // 1\n#define DE_EXLM S(DE_1)    // !\n#define DE_AT   ALGR(KC_Q) // @\n"
+    )
+    (tmp_path / "keymap_german_mac_iso.h").write_text("#define DE_Z KC_Y // Z\n#define DE_L KC_L // L\n#define DE_AT A(DE_L) // @\n")
+    (tmp_path / "keymap_german_copy.h").write_text("#define DE_Z KC_Y // Z\n#define DE_1 KC_1 // 1\n#define DE_EXLM S(KC_1) // !\n#define DE_AT ALGR(KC_Q) // @\n")
+    assert gen.layouts(tmp_path) == {
+        "DE": [
+            {"Y": "Z", "1": "1", "S(1)": "!", "ALGR(Q)": "@"},  # the identical copy is dropped
+            {"Y": "Z", "L": "L", "A(L)": "@"},
+        ]
+    }
+
+
+def test_generator_records_the_tree_it_read(tmp_path, monkeypatch):
+    headers = tmp_path / "qmk_firmware-firmware99/quantum/keymap_extras"
+    headers.mkdir(parents=True)
+    (headers / "keymap_german.h").write_text("#define DE_Z KC_Y // Z\n")
+    monkeypatch.setattr(gen, "OUT", tmp_path / "out.json")
+    monkeypatch.setattr(sys, "argv", ["gen", str(headers.parents[1])])
+    assert gen.main() == 0
+    data = json.loads((tmp_path / "out.json").read_text(encoding="utf-8"))
+    assert "qmk_firmware-firmware99" in data["_source"] and "firmware25" not in data["_source"]
+    assert data["layouts"]["DE"] == [{"Y": "Z"}]
+
+
+@needs_tree
+def test_aliases_point_at_keycodes_the_headers_define():
+    fresh = gen.table(QMK_TREE / "quantum" / "keymap_extras")
+    for prefix, names in gen.ALIASES.items():
+        for target in names.values():
+            assert target in fresh[prefix], f"{prefix}_{target}"
+
+
+@needs_tree
+def test_mod_aliases_cover_every_mod_tap_in_the_pinned_tree():
+    """Each `X_T(kc)` macro in QMK must give the modifiers that macro really holds."""
+    src = (QMK_TREE / "quantum" / "quantum_keycodes.h").read_text(encoding="utf-8")
+    macros = dict(re.findall(r"^#define (\w+)_T\(kc\) (.+?)(?:\s*//.*)?$", src, re.M))
+    assert "LCAG" in macros and "SAGR" in macros
+    del macros["SH"]  # swap-hands tap, not a mod: test_swap_hands_tap_keeps_its_hold
+
+    def mods(name: str) -> set[str]:
+        body = macros[name]
+        if m := re.fullmatch(r"(\w+)_T\(kc\)", body):
+            return mods(m.group(1))
+        return {ol.MOD_KEYS[tok] for tok in re.findall(r"MOD_(\w+)", body)}
+
+    assert {name: ol.MOD_ALIASES.get(name) for name in macros} == {name: mods(name) for name in macros}
+
+
+@needs_tree
+def test_locale_table_matches_the_pinned_tree():
+    """Regenerating must not change what the table says; a key QMK adds later is fine."""
+    fresh = gen.table(QMK_TREE / "quantum" / "keymap_extras")
+    for prefix, legends in ol.LOCALES.items():
+        for name, legend in legends.items():
+            if name in fresh.get(prefix, {}):
+                assert fresh[prefix][name] == legend, f"{prefix}_{name}: run scripts/gen_locale_legends.py"
+    assert gen.layouts(QMK_TREE / "quantum" / "keymap_extras").keys() >= ol.LAYOUTS.keys()

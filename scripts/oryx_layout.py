@@ -29,6 +29,7 @@ import sys
 import tempfile
 from collections import Counter, deque
 from dataclasses import dataclass, field
+from itertools import zip_longest
 from pathlib import Path
 
 # --------------------------------------------------------------------------
@@ -1583,7 +1584,7 @@ def pair_layers(old: Keymap, new: Keymap, lo: Labeller, ln: Labeller) -> dict[in
     def rank(o: Layer, n: Layer) -> tuple[int, float] | None:
         a, b = before[o.index], after[n.index]
         same_name = o.title == n.title
-        used = sum(1 for x, y in zip(a, b) if x or y)
+        used = sum(1 for x, y in zip_longest(a, b, fillvalue="") if x or y)  # a key only one side has counts
         share = sum(1 for x, y in zip(a, b) if (x or y) and x == y) / used if used else 0
         if a == b:
             if same_name:
@@ -1723,6 +1724,9 @@ def cmd_diff(args) -> int:
     keys: list[str] = []
     to_dual = to_dance = 0  # same actions, other mechanism: only worth one line
     for oi, ni in survivors:
+        before_keys, after_keys = len(olds[oi].keys), len(news[ni].keys)
+        if before_keys != after_keys:  # positions past the shorter side have nothing to compare with
+            lines.append(f"- **{news[ni].name}**: {before_keys} keys → {after_keys} keys (keyboard or layout changed)")
         for ki, (a, b) in enumerate(zip(olds[oi].keys, news[ni].keys)):
             if behaviour(lo, a, old_layer) != behaviour(ln, b, new_layer):
                 la, lb = lo.spelled_out(a), ln.spelled_out(b)

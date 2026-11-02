@@ -2254,3 +2254,65 @@ def test_diff_renumbered_body_change_with_equal_legends_says_so(layout_diff):
     assert out == "- **Base** (L1.2): `$/Shift` → `$/Shift`  (dual-function body changed)"
     with_raw = layout_diff(old, FOUR_NAMES, new, FOUR_NAMES, "--raw")
     assert with_raw == "- **Base** (L1.2): `$/Shift` → `$/Shift`  (`DUAL_FUNC_0` → `DUAL_FUNC_1`)  (dual-function body changed)"
+
+
+# --- diff: layers with different key counts (#12) -----------------------------------
+
+
+def grown(src: str) -> str:
+    """Every layer one key longer, as a board with more keys would give."""
+    return src.replace("\n  ),", ", KC_F13\n  ),")
+
+
+SIZES = ["Base", "Nav", "Sym", "Fun"]
+
+
+def test_diff_more_keys_is_reported_per_layer(layout_diff):
+    out = layout_diff(export(FOUR), FOUR_NAMES, grown(export(FOUR)), FOUR_NAMES)
+    assert out.splitlines() == [f"- **{name}**: 52 keys → 53 keys (keyboard or layout changed)" for name in SIZES]
+
+
+def test_diff_fewer_keys_is_reported_per_layer(layout_diff):
+    out = layout_diff(grown(export(FOUR)), FOUR_NAMES, export(FOUR), FOUR_NAMES)
+    assert out.splitlines() == [f"- **{name}**: 53 keys → 52 keys (keyboard or layout changed)" for name in SIZES]
+
+
+def test_diff_one_layer_longer_never_says_no_changes(layout_diff):
+    new = export(FOUR).replace("OSM(MOD_LSFT)\n", "OSM(MOD_LSFT), KC_TRANSPARENT\n")
+    assert layout_diff(FOUR, FOUR_NAMES, new, FOUR_NAMES) == "- **Base**: 52 keys → 53 keys (keyboard or layout changed)"
+
+
+def test_diff_shared_positions_are_still_compared(layout_diff):
+    new = grown(export([edited(base_keys(), 0), NAV, SYM, FUN]))
+    out = layout_diff(FOUR, FOUR_NAMES, new, FOUR_NAMES).splitlines()
+    assert out[:4] == [f"- **{name}**: 52 keys → 53 keys (keyboard or layout changed)" for name in SIZES]
+    assert out[4:] == ["- **Base** (L0.0): `Q` → `Home`"]
+
+
+def test_diff_key_count_line_survives_the_limit(layout_diff):
+    new = grown(export([edited(edited(base_keys(), 0), 1), NAV, SYM, FUN]))
+    out = layout_diff(FOUR, FOUR_NAMES, new, FOUR_NAMES, "--limit", "1").splitlines()
+    assert out[:4] == [f"- **{name}**: 52 keys → 53 keys (keyboard or layout changed)" for name in SIZES]
+    assert out[4:] == ["- **Base** (L0.0): `Q` → `Home`", "- …and 1 more key changes"]
+
+
+def test_diff_unnamed_layers_with_new_counts_pair_by_index(layout_diff):
+    plain = titles("Layer", "Layer", "Layer", "Layer")
+    out = layout_diff(FOUR, plain, grown(export(FOUR)), plain)
+    assert out.splitlines() == [f"- **Layer {i}**: 52 keys → 53 keys (keyboard or layout changed)" for i in range(4)]
+
+
+def keymap_of(keys: list[str], title: str) -> ol.Keymap:
+    return ol.Keymap("LAYOUT", [ol.Layer(0, "0", keys, title, title)])
+
+
+@pytest.mark.parametrize(
+    "new,paired",
+    [
+        (["KC_A", "KC_B", "KC_C", "KC_D"], True),  # 3 of 4 match
+        (["KC_A", "KC_B", "KC_C", "KC_D", "KC_E", "KC_F", "KC_G", "KC_H"], False),  # 3 of 8: not "all of the 3 shared"
+    ],
+)
+def test_pairing_counts_keys_only_one_side_has(new, paired):
+    old_km, new_km = keymap_of(["KC_A", "KC_B", "KC_C"], "One"), keymap_of(new, "Two")
+    assert ol.pair_layers(old_km, new_km, ol.Labeller(old_km), ol.Labeller(new_km)) == ({0: 0} if paired else {})

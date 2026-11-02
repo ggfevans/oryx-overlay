@@ -403,7 +403,7 @@ def test_diff_cli(tmp_path, capsys):
     ol.main(["diff", str(old), str(new), "--meta", "/nonexistent", "--info", "/nonexistent"])
     out = capsys.readouterr().out
     assert "- **Layer 0** (L0.1): `W` → `P`" in out
-    assert "- **Layer 2**: new layer" in out
+    assert "- Layer added: **Layer 2** (position 2)" in out
 
 
 def test_render_cli_text_only(tmp_path, capsys):
@@ -1449,3 +1449,870 @@ def test_locale_table_matches_the_pinned_tree():
             if name in fresh.get(prefix, {}):
                 assert fresh[prefix][name] == legend, f"{prefix}_{name}: run scripts/gen_locale_legends.py"
     assert gen.layouts(QMK_TREE / "quantum" / "keymap_extras").keys() >= ol.LAYOUTS.keys()
+
+
+# --- diff: pairing layers across revisions (#12) ---------------------------------
+
+NAV = filler()
+NAV[:4] = ["KC_LEFT", "KC_DOWN", "KC_UP", "KC_RIGHT"]
+SYM = filler()
+SYM[:4] = ["KC_EXLM", "KC_AT", "KC_HASH", "KC_DLR"]
+FUN = filler()
+FUN[:4] = ["KC_F1", "KC_F2", "KC_F3", "KC_F4"]
+NEW = filler()
+NEW[:4] = ["KC_1", "KC_2", "KC_3", "KC_4"]
+
+
+def titles(*names: str) -> dict:
+    return {"layers": [{"position": i, "title": name} for i, name in enumerate(names)]}
+
+
+def edited(keys: list[str], at: int = 0, to: str = "KC_HOME") -> list[str]:
+    keys = list(keys)
+    keys[at] = to
+    return keys
+
+
+def base_to(nav: int | None = 1, sym: int = 2) -> list[str]:
+    """base_keys() with its LT to Nav and TG to Sym pointing where those layers are now."""
+    keys = base_keys()
+    keys[40] = f"LT({nav}, KC_SPACE)" if nav is not None else "KC_SPACE"
+    keys[48] = f"TG({sym})"
+    return keys
+
+
+def dual_hold_to(src: str, layer: int) -> str:
+    """Point DUAL_FUNC_1's hold, `layer_on(3)` in KEYMAP_C, at another layer."""
+    return src.replace("layer_on(3)", f"layer_on({layer})").replace("layer_off(3)", f"layer_off({layer})")
+
+
+def export(layers: list[list[str]], hold: int = 3) -> str:
+    """A keymap.c with no lights (KEYMAP_C's stay on layer 1 wherever layers go) and DUAL_FUNC_1 holding `hold`."""
+    return dual_hold_to(make_keymap(layers).replace("[1] = { {0,255,255}, {85,255,255}, {0,0,0} },\n", ""), hold)
+
+
+@pytest.fixture
+def layout_diff(tmp_path, monkeypatch, capsys):
+    """Commit an old export, leave a new one in the worktree and diff them as sync.sh does."""
+    temp_git(tmp_path, "init", "-q")
+    layout = tmp_path / "layout"
+    layout.mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    def write(src: str, meta: dict | str | list | None) -> None:
+        (layout / "keymap.c").write_text(src)
+        (layout / ".oryx.json").unlink(missing_ok=True)
+        if meta is not None:
+            (layout / ".oryx.json").write_text(meta if isinstance(meta, str) else json.dumps(meta))
+
+    def run(old, old_meta, new, new_meta, *flags: str) -> str:
+        write(old if isinstance(old, str) else export(old), old_meta)
+        temp_git(tmp_path, "add", "-A")
+        temp_git(tmp_path, "commit", "-qm", "old", "--allow-empty")
+        write(new if isinstance(new, str) else export(new), new_meta)
+        assert ol.main(["diff", "HEAD:layout/keymap.c", "layout/keymap.c", "--meta", "layout/.oryx.json", *flags]) == 0
+        return capsys.readouterr().out.strip()
+
+    return run
+
+
+FOUR = [base_keys(), NAV, SYM, FUN]
+FOUR_NAMES = titles("Base", "Nav", "Sym", "Fun")
+
+
+def test_diff_unchanged(layout_diff):
+    assert layout_diff(FOUR, FOUR_NAMES, FOUR, FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_insert_reports_only_the_insert(layout_diff):
+    new = export([base_to(nav=2, sym=3), NEW, NAV, SYM, FUN], 4)
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Mouse", "Nav", "Sym", "Fun"))
+    assert out == "- Layer added: **Mouse** (position 1)"
+
+
+def test_diff_removal(layout_diff):
+    new = export([base_to(nav=None, sym=1), SYM, FUN], 2)
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Sym", "Fun"))
+    assert out.splitlines() == [
+        "- Layer removed: **Nav** (position 1)",
+        "- **Base** (L3.4): `Space/Nav (removed)` → `Space`",
+    ]
+
+
+def test_diff_reorder_reports_one_move(layout_diff):
+    new = export([base_to(nav=2, sym=1), SYM, NAV, FUN])
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Sym", "Nav", "Fun"))
+    assert out == "- Layer moved: **Nav** (position 1 → 2)"
+
+
+def test_diff_move_past_several_layers_is_one_move(layout_diff):
+    new = export([base_to(nav=3, sym=1), SYM, FUN, NAV], 2)
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Sym", "Fun", "Nav"))
+    assert out == "- Layer moved: **Nav** (position 1 → 3)"
+
+
+def test_diff_rename_with_unchanged_content(layout_diff):
+    out = layout_diff(FOUR, FOUR_NAMES, FOUR, titles("Base", "Arrows", "Sym", "Fun"))
+    assert out == "- Layer renamed: **Nav** → **Arrows**"
+
+
+def test_diff_rename_plus_an_edit(layout_diff):
+    new = [base_keys(), edited(NAV), SYM, FUN]
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Arrows", "Sym", "Fun"))
+    assert out.splitlines() == ["- Layer renamed: **Nav** → **Arrows**", "- **Arrows** (L0.0): `←` → `Home`"]
+
+
+def test_diff_rename_and_move_keeps_the_layer(layout_diff):
+    new = export([base_to(nav=2, sym=1), SYM, NAV, FUN])
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Sym", "Arrows", "Fun"))
+    assert out.splitlines() == ["- Layer renamed: **Nav** → **Arrows**", "- Layer moved: **Arrows** (position 1 → 2)"]
+
+
+def test_diff_two_renames_swapped_follow_the_content(layout_diff):
+    """The keys stayed put and only the names traded places: not a move, and no key lines."""
+    out = layout_diff(FOUR, FOUR_NAMES, FOUR, titles("Base", "Sym", "Nav", "Fun"))
+    assert out.splitlines() == ["- Layer renamed: **Nav** → **Sym**", "- Layer renamed: **Sym** → **Nav**"]
+
+
+def test_diff_same_name_new_content_stays_the_same_layer(layout_diff):
+    rewritten = [base_keys(), NEW, SYM, FUN]
+    out = layout_diff(FOUR, FOUR_NAMES, rewritten, FOUR_NAMES)
+    assert "Layer added" not in out and "Layer removed" not in out
+    assert "- **Nav** (L0.0): `←` → `1`" in out
+
+
+def test_diff_rewritten_layer_under_a_new_name_is_a_replacement(layout_diff):
+    out = layout_diff(FOUR, FOUR_NAMES, [base_keys(), NEW, SYM, FUN], titles("Base", "Mouse", "Sym", "Fun"))
+    assert out.splitlines() == [
+        "- Layer added: **Mouse** (position 1)",
+        "- Layer removed: **Nav** (position 1)",
+        "- **Base** (L3.4): `Space/Nav (removed)` → `Space/Mouse`",
+    ]
+
+
+def test_diff_a_tiny_layer_edit_under_a_new_name_is_not_a_match(layout_diff):
+    """One key of two matching isn't a majority, however small the layer."""
+    one, two = filler(), filler()
+    one[:2] = ["KC_A", "KC_B"]
+    two[:2] = ["KC_A", "KC_C"]
+    out = layout_diff([base_keys(), one], titles("Base", "One"), [base_keys(), two], titles("Base", "Two"))
+    assert out.splitlines()[:2] == ["- Layer added: **Two** (position 1)", "- Layer removed: **One** (position 1)"]
+
+
+def test_diff_unnamed_insert(layout_diff):
+    plain = titles("Layer", "Layer", "Layer", "Layer")
+    new = export([base_to(nav=2, sym=3), NEW, NAV, SYM, FUN], 4)
+    out = layout_diff(FOUR, plain, new, titles("Layer", "Layer", "Layer", "Layer", "Layer"))
+    assert out == "- Layer added: **Layer 1** (position 1)"
+
+
+def test_diff_unnamed_insert_plus_an_edit_labels_the_new_position(layout_diff):
+    plain = titles("Layer", "Layer", "Layer", "Layer")
+    new = export([base_to(nav=2, sym=3), NEW, NAV, edited(SYM), FUN], 4)
+    out = layout_diff(FOUR, plain, new, titles("Layer", "Layer", "Layer", "Layer", "Layer"))
+    assert out.splitlines() == ["- Layer added: **Layer 1** (position 1)", "- **Layer 3** (L0.0): `!` → `Home`"]
+
+
+def test_diff_unnamed_layer_rewritten_in_place_pairs_by_index(layout_diff):
+    plain = titles("Layer", "Layer", "Layer", "Layer")
+    out = layout_diff(FOUR, plain, [base_keys(), NEW, SYM, FUN], plain)
+    assert "Layer added" not in out and "- **Layer 1** (L0.0): `←` → `1`" in out
+
+
+def test_diff_naming_an_unnamed_layer_is_a_rename(layout_diff):
+    plain = titles("Base", "Layer", "Sym", "Fun")
+    assert layout_diff(FOUR, plain, FOUR, FOUR_NAMES) == "- Layer renamed: **Layer 1** → **Nav**"
+
+
+def test_diff_identical_blank_layers_keep_their_order(layout_diff):
+    plain = titles("Layer", "Layer", "Layer")
+    old = [base_keys(), filler(), filler(), FUN]
+    new = export([base_to(nav=2, sym=3), NEW, filler(), filler(), FUN], 4)
+    out = layout_diff(old, plain, new, titles("Layer", "Layer", "Layer", "Layer", "Layer"))
+    assert out == "- Layer added: **Layer 1** (position 1)"
+
+
+def test_diff_duplicate_names_insert(layout_diff):
+    old = [base_keys(), NAV, SYM, FUN]
+    names = titles("Base", "Nav", "Nav", "Fun")
+    new = export([base_to(nav=2, sym=3), NEW, NAV, SYM, FUN], 4)
+    out = layout_diff(old, names, new, titles("Base", "Mouse", "Nav", "Nav", "Fun"))
+    assert out == "- Layer added: **Mouse** (position 1)"
+
+
+def test_diff_duplicate_names_edit_lands_on_the_right_one(layout_diff):
+    names = titles("Base", "Nav", "Nav", "Fun")
+    out = layout_diff(FOUR, names, [base_keys(), NAV, edited(SYM), FUN], names)
+    assert out == "- **Nav 2** (L0.0): `!` → `Home`"
+
+
+def test_diff_reference_retargeted_to_another_layer(layout_diff):
+    new = [base_to(sym=3), NAV, SYM, FUN]
+    assert layout_diff(FOUR, FOUR_NAMES, new, FOUR_NAMES) == "- **Base** (L4.0): `TG Sym` → `TG Fun`"
+
+
+def test_diff_same_number_new_layer_is_a_change(layout_diff):
+    """TG(2) stayed TG(2), but the layers traded places under it, so it does something else."""
+    plain = titles("Layer", "Layer", "Layer", "Layer")
+    new = [base_to(nav=2), SYM, NAV, FUN]  # the LT follows Nav; the TG doesn't follow Sym
+    out = layout_diff(FOUR, plain, new, plain)
+    assert out.splitlines() == ["- Layer moved: **Layer 2** (position 1 → 2)", "- **Layer 0** (L4.0): `TG Layer 1` → `TG Layer 2`"]
+
+
+def test_diff_reference_into_a_new_layer_is_a_change(layout_diff):
+    new = export([base_to(nav=2, sym=1), NEW, NAV, SYM, FUN], 4)
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Mouse", "Nav", "Sym", "Fun"))
+    assert out.splitlines() == ["- Layer added: **Mouse** (position 1)", "- **Base** (L4.0): `TG Sym` → `TG Mouse`"]
+
+
+def test_diff_dummy_layer_of_an_intercepted_key_is_not_a_reference(layout_diff):
+    """LT(2, KC_F14) handled in process_record_user: the 2 is a dummy, not the Sym layer."""
+    def with_dummy(src: str) -> str:
+        src = src.replace("#define DUAL_FUNC_0", "#define TH_X LT(2, KC_F14)\n#define DUAL_FUNC_0")
+        return src.replace("case ST_MACRO_0:", "case TH_X:\n      tap_code(KC_A);\n      return false;\n    case ST_MACRO_0:")
+
+    old_keys = edited(base_keys(), 1, "TH_X")
+    new_keys = edited(base_to(nav=2, sym=3), 1, "TH_X")
+    new = with_dummy(export([new_keys, NEW, NAV, SYM, FUN], 4))
+    out = layout_diff(with_dummy(export([old_keys, NAV, SYM, FUN])), FOUR_NAMES, new, titles("Base", "Mouse", "Nav", "Sym", "Fun"))
+    assert out == "- Layer added: **Mouse** (position 1)"
+
+
+def renumber_duals(src: str) -> str:
+    """What Oryx does when a dual-function key is added earlier in the file."""
+    src = src.replace("DUAL_FUNC_1", "DUAL_FUNC_7").replace("DUAL_FUNC_0", "DUAL_FUNC_1").replace("DUAL_FUNC_7", "DUAL_FUNC_0")
+    return src.replace("LT(14, KC_8)", "LT(9, KC_F2)").replace("LT(11, KC_W)", "LT(4, KC_E)")
+
+
+def test_diff_dual_func_renumber_is_no_change(layout_diff):
+    old = make_keymap(FOUR)
+    assert layout_diff(old, FOUR_NAMES, renumber_duals(old), FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_dual_func_real_behaviour_change_is_reported(layout_diff):
+    old = make_keymap(FOUR)
+    new = renumber_duals(old).replace("code16(KC_DLR)", "code16(KC_EQUAL)")
+    out = layout_diff(old, FOUR_NAMES, new, FOUR_NAMES, "--raw")
+    assert out == "- **Base** (L1.2): `$/Super` → `=/Super`  (`DUAL_FUNC_0` → `DUAL_FUNC_1`)"
+
+
+def test_diff_dual_func_hold_follows_its_layer(layout_diff):
+    new = export([base_keys(), NAV, SYM, FUN], 2)
+    assert layout_diff(FOUR, FOUR_NAMES, new, FOUR_NAMES) == "- **Base** (L3.5): `Ctrl/Fun` → `Ctrl/Sym`"
+
+
+def test_diff_same_legend_real_change_shows_the_raw_keycodes(layout_diff):
+    new = [edited(base_keys(), 0, "KC_LSFT"), NAV, SYM, FUN]
+    old = [edited(base_keys(), 0, "KC_RSFT"), NAV, SYM, FUN]
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "- **Base** (L0.0): `Shift` → `Shift`  (`KC_RSFT` → `KC_LSFT`)"
+
+
+def test_diff_leds_follow_the_layer(layout_diff):
+    def lit(src: str, position: int) -> str:
+        return src.replace("[1] = { {0,255,255}", f"[{position}] = {{ {{0,255,255}}")
+
+    old = lit(make_keymap(FOUR), 1)
+    new = dual_hold_to(lit(make_keymap([base_to(nav=2, sym=3), NEW, NAV, SYM, FUN]), 2), 4)
+    out = layout_diff(old, FOUR_NAMES, new, titles("Base", "Mouse", "Nav", "Sym", "Fun"))
+    assert out == "- Layer added: **Mouse** (position 1)"
+
+
+def test_diff_real_led_change_names_the_layer(layout_diff):
+    old = make_keymap(FOUR)
+    new = old.replace("{85,255,255}", "{86,255,255}")
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "- LED colours changed on layer(s) Nav"
+
+
+def test_diff_old_side_without_metadata_pairs_by_content_then_index(layout_diff):
+    new = export([base_to(nav=2, sym=3), NEW, NAV, edited(SYM), FUN], 4)
+    out = layout_diff(FOUR, None, new, titles("Base", "Mouse", "Nav", "Sym", "Fun"))
+    assert out.splitlines() == ["- Layer added: **Mouse** (position 1)", "- **Sym** (L0.0): `!` → `Home`"]
+
+
+@pytest.mark.parametrize("meta", [None, {"title": "no layers key"}, {"layers": []}])
+def test_diff_old_side_without_names_falls_back_to_index(layout_diff, meta):
+    out = layout_diff(FOUR, meta, [base_keys(), NEW, SYM, FUN], FOUR_NAMES)
+    assert "renamed" not in out and "Layer added" not in out and "Layer removed" not in out
+    assert "- **Nav** (L0.0): `←` → `1`" in out
+
+
+@pytest.mark.parametrize("meta", ["{not json", ["not", "a", "dict"]])
+def test_diff_corrupt_old_metadata_is_ignored(layout_diff, meta):
+    out = layout_diff(FOUR, meta, [base_keys(), edited(NAV), SYM, FUN], FOUR_NAMES)
+    assert out == "- **Nav** (L0.0): `←` → `Home`"
+
+
+def test_diff_both_sides_refs_read_their_own_metadata(tmp_path, monkeypatch, capsys):
+    temp_git(tmp_path, "init", "-q")
+    layout = tmp_path / "layout"
+    layout.mkdir()
+    for keymap, meta in ((FOUR, FOUR_NAMES), (FOUR, titles("Base", "Arrows", "Sym", "Fun"))):
+        (layout / "keymap.c").write_text(make_keymap(keymap))
+        (layout / ".oryx.json").write_text(json.dumps(meta))
+        temp_git(tmp_path, "add", "-A")
+        temp_git(tmp_path, "commit", "-qm", "export", "--allow-empty")
+    monkeypatch.chdir(tmp_path)
+    ol.main(["diff", "HEAD~1:layout/keymap.c", "HEAD:layout/keymap.c", "--meta", "/x"])
+    assert capsys.readouterr().out.strip() == "- Layer renamed: **Nav** → **Arrows**"
+
+
+def test_diff_plain_old_file_uses_metadata_beside_it_not_the_new_one(tmp_path, capsys):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    (tmp_path / "a/keymap.c").write_text(export(FOUR))
+    (tmp_path / "a/.oryx.json").write_text(json.dumps(FOUR_NAMES))
+    new = export([base_to(nav=2, sym=3), NEW, NAV, SYM, FUN], 4)
+    (tmp_path / "b/keymap.c").write_text(new)
+    meta = tmp_path / "b/.oryx.json"
+    meta.write_text(json.dumps(titles("Base", "Mouse", "Nav", "Sym", "Fun")))
+    ol.main(["diff", str(tmp_path / "a/keymap.c"), str(tmp_path / "b/keymap.c"), "--meta", str(meta)])
+    assert capsys.readouterr().out.strip() == "- Layer added: **Mouse** (position 1)"
+    (tmp_path / "a/.oryx.json").unlink()  # --meta describes the new file, so it mustn't name the old one
+    ol.main(["diff", str(tmp_path / "a/keymap.c"), str(tmp_path / "b/keymap.c"), "--meta", str(meta)])
+    assert capsys.readouterr().out.strip() == "- Layer added: **Mouse** (position 1)"
+
+
+def test_diff_limit_keeps_layer_lines_and_says_what_it_dropped(layout_diff):
+    rewritten = [f"KC_F{i % 12 + 1}" for i in range(sum(ROWS))]
+    new = export([rewritten, NEW, NAV, SYM, FUN], 4)
+    meta = titles("Base", "Mouse", "Nav", "Sym", "Fun")
+    full = layout_diff(FOUR, FOUR_NAMES, new, meta).splitlines()
+    short = layout_diff(FOUR, FOUR_NAMES, new, meta, "--limit", "5").splitlines()
+    keys = len(full) - 1
+    assert keys > 5
+    assert short == full[:6] + [f"- …and {keys - 5} more key changes"]
+
+
+# --- sync.sh's call, end to end ----------------------------------------------------
+
+
+@pytest.fixture
+def sync_repo(tmp_path):
+    """A repo with sync.sh's real scripts, and an oryx_fetch.py that serves a prepared export."""
+    repo = tmp_path / "repo"
+    shutil.copytree(Path(ol.__file__).parent, repo / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
+    (repo / "scripts/oryx_fetch.py").write_text(
+        'import os, shutil, sys\n'
+        'out = sys.argv[sys.argv.index("--out") + 1]\n'
+        'for name in os.listdir(os.environ["FAKE_EXPORT"]):\n'
+        '    shutil.copy(os.path.join(os.environ["FAKE_EXPORT"], name), out)\n'
+        'print("revision=r2\\nqmk_version=25.0\\nchange_note=Added a layer")\n'
+    )
+    (repo / "oryx.conf").write_text('ORYX_LAYOUT_ID=default\nKEYBOARD=voyager\n')
+    (repo / "layout").mkdir()
+    (repo / "layout/keymap.c").write_text(make_keymap(FOUR))
+    (repo / "layout/.oryx.json").write_text(json.dumps(FOUR_NAMES))
+    temp_git(repo, "init", "-q")
+    temp_git(repo, "checkout", "-qb", "main")
+    temp_git(repo, "add", "-A")
+    temp_git(repo, "commit", "-qm", "first export")
+    return repo
+
+
+def sync(repo: Path, tmp_path: Path, keymap: str, meta: dict) -> subprocess.CompletedProcess:
+    export = tmp_path / "export"
+    export.mkdir()
+    (export / "keymap.c").write_text(keymap)
+    (export / ".oryx.json").write_text(json.dumps(meta))
+    env = {
+        **os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "PYTHON": sys.executable,
+        "CACHE_DIR": str(tmp_path / "cache"), "FAKE_EXPORT": str(export),
+        "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
+    }
+    return subprocess.run(["bash", str(repo / "scripts/sync.sh")], capture_output=True, text=True, env=env, cwd=repo)
+
+
+def test_sync_commit_message_reports_the_insert(sync_repo, tmp_path):
+    new = export([base_to(nav=2, sym=3), NEW, NAV, SYM, FUN], 4)
+    res = sync(sync_repo, tmp_path, new, titles("Base", "Mouse", "Nav", "Sym", "Fun"))
+    assert res.returncode == 0, res.stderr
+    body = subprocess.run(["git", "-C", str(sync_repo), "log", "-1", "oryx", "--format=%B"], capture_output=True, text=True, check=True).stdout
+    assert "- Layer added: **Mouse** (position 1)" in body
+    assert "→" not in body
+
+
+def test_sync_commit_message_is_bounded_but_keeps_layer_lines(sync_repo, tmp_path):
+    rewritten = [f"KC_F{i % 12 + 1}" for i in range(sum(ROWS))]
+    new = export([rewritten, NEW, [k.replace("KC_F", "KC_") for k in rewritten], SYM, FUN], 4)
+    res = sync(sync_repo, tmp_path, new, titles("Base", "Mouse", "Nav", "Sym", "Fun"))
+    assert res.returncode == 0, res.stderr
+    body = subprocess.run(["git", "-C", str(sync_repo), "log", "-1", "oryx", "--format=%B"], capture_output=True, text=True, check=True).stdout
+    assert "- Layer added: **Mouse** (position 1)" in body
+    assert sum(line.startswith("- **") for line in body.splitlines()) == 60
+    assert re.search(r"^- …and \d+ more key changes$", body, re.M)
+
+
+# --- diff: review follow-ups (#12) -------------------------------------------------
+
+
+def test_diff_i18n_h_on_one_side_only_is_no_change(tmp_path, capsys):
+    """Legends fall back to the locale tables, so DE_SS is ß with or without an i18n.h."""
+    src = make_keymap([edited(base_keys(), 0, "DE_SS"), filler()])
+    for side in ("a", "b"):
+        (tmp_path / side).mkdir()
+        (tmp_path / side / "keymap.c").write_text(src)
+    (tmp_path / "a/i18n.h").write_text("#define DE_SS KC_MINS\n")
+    assert ol.main(["diff", str(tmp_path / "a/keymap.c"), str(tmp_path / "b/keymap.c"), "--meta", "/x"]) == 0
+    assert capsys.readouterr().out.strip() == "No keymap changes."
+
+
+PLAIN = titles(*["Layer"] * 9)
+
+
+def test_diff_blank_insert_before_a_later_blank_layer(layout_diff):
+    """Oryx creates layers blank. The old blank is at the end, and must stay there."""
+    old = [base_keys(), NAV, SYM, FUN, filler()]
+    new = export([base_to(sym=3), NAV, filler(), SYM, FUN, filler()], 4)
+    assert layout_diff(old, PLAIN, new, PLAIN) == "- Layer added: **Layer 2** (position 2)"
+
+
+def test_diff_blank_insert_beside_blanks_moves_nothing(layout_diff):
+    old = [base_keys(), NAV, filler(), filler(), FUN]
+    new = export([base_to(sym=3), NEW, NAV, filler(), filler(), FUN], 4)
+    out = layout_diff(old, PLAIN, edit_ref(new), PLAIN)
+    assert out == "- Layer added: **Layer 1** (position 1)"
+
+
+def edit_ref(src: str) -> str:
+    """The LT in base_to() defaults to layer 1: send it after Nav, which moved to 2."""
+    return src.replace("LT(1, KC_SPACE)", "LT(2, KC_SPACE)")
+
+
+def test_diff_copying_a_layer_over_another_stays_in_place(layout_diff):
+    """Layer 1 became a copy of layer 2: layer 1 changed, layer 2 didn't, and nothing moved."""
+    out = layout_diff(FOUR, PLAIN, [base_keys(), SYM, SYM, FUN], PLAIN)
+    assert out.splitlines() == [f"- **Layer 1** (L0.{i}): `{a}` → `{b}`" for i, (a, b) in enumerate(zip("←↓↑→", "!@#$"))]
+
+
+def dances(**bodies) -> str:
+    """Oryx's tap dance code: name=(tap, hold, double tap, double hold), "" for none.
+    A double tap of "" is the plain two presses Oryx writes when none is set."""
+    out, table = [], []
+    for name, (tap, hold, double, double_hold) in bodies.items():
+        n = name.removeprefix("DANCE_")
+        cases = [f"case SINGLE_TAP: {tap}; break;" if "(" in tap and not tap.startswith("KC") else f"case SINGLE_TAP: register_code16({tap}); break;"]
+        if hold:
+            cases.append(f"case SINGLE_HOLD: {hold if hold.startswith('layer_') else f'register_code16({hold})'}; break;")
+        cases.append(f"case DOUBLE_TAP: register_code16({double}); break;" if double else f"case DOUBLE_TAP: register_code16({tap}); register_code16({tap}); break;")
+        if double_hold:
+            cases.append(f"case DOUBLE_HOLD: register_code16({double_hold}); break;")
+        cases.append(f"case DOUBLE_SINGLE_TAP: tap_code16({tap}); register_code16({tap});")
+        body = "\n        ".join(cases)
+        out.append(
+            f"void dance_{n}_finished(tap_dance_state_t *state, void *user_data) {{\n"
+            f"    dance_state[{n}].step = dance_step(state);\n"
+            f"    switch (dance_state[{n}].step) {{\n        {body}\n    }}\n}}\n"
+        )
+        table.append(f"        [DANCE_{n}] = ACTION_TAP_DANCE_FN_ADVANCED(on_dance_{n}, dance_{n}_finished, dance_{n}_reset),")
+    return "\n".join(out) + "\ntap_dance_action_t tap_dance_actions[] = {\n" + "\n".join(table) + "\n};\n"
+
+
+def danced(key: str, code: str, at: int = 14) -> str:
+    """FOUR with `key` at L1.2, where base_keys() has DUAL_FUNC_0, plus dance code."""
+    return export([edited(base_keys(), at, key), NAV, SYM, FUN]) + code
+
+
+def test_parse_dances_real_shape():
+    km = ol.parse_keymap(danced("TD(DANCE_0)", dances(DANCE_0=("KC_1", "KC_EXLM", "", ""), DANCE_1=("KC_Z", "", "", "KC_LEFT_CTRL"), DANCE_2=("KC_U", "", "LGUI(KC_SPACE)", ""))))
+    assert km.dances == {
+        "DANCE_0": ("KC_1", "KC_EXLM", "", ""),
+        "DANCE_1": ("KC_Z", "", "", "KC_LEFT_CTRL"),
+        "DANCE_2": ("KC_U", "", "LGUI(KC_SPACE)", ""),
+    }
+
+
+def test_diff_tap_dance_to_dual_function_with_same_behaviour(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_DLR", "KC_LEFT_GUI", "", "")))
+    assert layout_diff(old, FOUR_NAMES, FOUR, FOUR_NAMES) == "- 1 tap dance became a dual-function key (same tap and hold; timing differs)"
+
+
+def test_diff_tap_dance_to_dual_function_with_new_behaviour(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_DLR", "KC_EXLM", "", "")))
+    assert layout_diff(old, FOUR_NAMES, FOUR, FOUR_NAMES) == "- **Base** (L1.2): `$/!` → `$/Super`"
+
+
+def test_diff_tap_dance_renumber_is_no_change(layout_diff):
+    body = ("KC_U", "", "LGUI(KC_SPACE)", "")
+    old = danced("TD(DANCE_0)", dances(DANCE_0=body))
+    new = danced("TD(DANCE_4)", dances(DANCE_4=body))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_tap_dance_body_edit_under_the_same_number(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_EQUAL", "KC_ESCAPE", "", "")))
+    new = danced("TD(DANCE_0)", dances(DANCE_0=("KC_MPLY", "KC_MNXT", "", "")))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "- **Base** (L1.2): `=/Esc` → `Play/Next`"
+
+
+def test_diff_double_hold_stays_a_dance(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_Z", "", "", "KC_LEFT_CTRL")))
+    new = danced("TD(DANCE_0)", dances(DANCE_0=("KC_Z", "KC_LEFT_CTRL", "", "")))
+    out = layout_diff(old, FOUR_NAMES, new, FOUR_NAMES)
+    assert out == "- **Base** (L1.2): `Z, double-hold Ctrl` → `Z/Ctrl`"
+
+
+def test_diff_double_tap_is_part_of_the_dance(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_U", "", "KC_V", "")))
+    new = danced("TD(DANCE_1)", dances(DANCE_1=("KC_U", "", "KC_W", "")))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "- **Base** (L1.2): `U, double-tap V` → `U, double-tap W`"
+
+
+def test_diff_tap_dance_hold_follows_its_layer(layout_diff):
+    """Oryx's hold can be layer_move, here to Sym, which an insert renumbers."""
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_ESCAPE", "layer_move(2)", "", "")))
+    new = export([edited(base_to(nav=2, sym=3), 14, "TD(DANCE_0)"), NEW, NAV, SYM, FUN], 4) + dances(DANCE_0=("KC_ESCAPE", "layer_move(3)", "", ""))
+    assert layout_diff(old, FOUR_NAMES, new, titles("Base", "Mouse", "Nav", "Sym", "Fun")) == "- Layer added: **Mouse** (position 1)"
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        "void dance_0_finished(tap_dance_state_t *state, void *user_data) {\n  rgblight_toggle();\n}\n",
+        "void dance_0_finished(tap_dance_state_t *state, void *user_data) {\n  switch (x) {\n    case SINGLE_TAP: my_code(); break;\n  }\n}\n",
+        "void dance_0_finished(tap_dance_state_t *state, void *user_data) {\n  switch (x) {\n    case TRIPLE_TAP: register_code16(KC_A); break;\n  }\n}\n",
+        "void dance_0_finished(tap_dance_state_t *state, void *user_data) {\n  switch (x) {\n",
+    ],
+)
+def test_diff_unreadable_dance_falls_back_to_its_number(layout_diff, broken):
+    table = "tap_dance_action_t tap_dance_actions[] = {\n  [DANCE_0] = ACTION_TAP_DANCE_FN_ADVANCED(on_dance_0, dance_0_finished, dance_0_reset),\n};\n"
+    src = danced("TD(DANCE_0)", broken + table)
+    assert ol.parse_keymap(src).dances == {}
+    assert layout_diff(src, FOUR_NAMES, src, FOUR_NAMES) == "No keymap changes."
+    other = src.replace("TD(DANCE_0)", "TD(DANCE_1)")
+    assert layout_diff(src, FOUR_NAMES, other, FOUR_NAMES) == "- **Base** (L1.2): `Dance 0` → `Dance 1`"
+
+
+@pytest.mark.parametrize(
+    "a,b",
+    [
+        ("MT(MOD_LSFT | MOD_LCTL, KC_A)", "MT(MOD_LSFT|MOD_LCTL, KC_A)"),
+        ("MT(MOD_LSFT | MOD_LCTL, KC_A)", "MT(MOD_LCTL | MOD_LSFT, KC_A)"),
+        ("OSM(MOD_LSFT|MOD_LALT)", "OSM( MOD_LALT | MOD_LSFT )"),
+        ("LM(1,MOD_LSFT|MOD_LCTL)", "LM(1, MOD_LCTL|MOD_LSFT)"),
+    ],
+)
+def test_diff_spelling_of_a_mod_set_is_no_change(layout_diff, a, b):
+    old, new = [edited(base_keys(), 0, a), NAV, SYM, FUN], [edited(base_keys(), 0, b), NAV, SYM, FUN]
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_different_mods_are_a_change(layout_diff):
+    old = [edited(base_keys(), 0, "MT(MOD_LSFT | MOD_LCTL, KC_A)"), NAV, SYM, FUN]
+    new = [edited(base_keys(), 0, "MT(MOD_LSFT | MOD_LALT, KC_A)"), NAV, SYM, FUN]
+    assert "L0.0" in layout_diff(old, FOUR_NAMES, new, FOUR_NAMES)
+
+
+@pytest.mark.parametrize("limit", ["-1", "x"])
+def test_diff_rejects_a_bad_limit(tmp_path, limit, capsys):
+    km = tmp_path / "keymap.c"
+    km.write_text(make_keymap(FOUR))
+    with pytest.raises(SystemExit) as exc:
+        ol.main(["diff", str(km), str(km), "--limit", limit])
+    assert exc.value.code == 2 and "--limit" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [
+        {"layers": "x"},
+        {"layers": 3},
+        {"layers": ["x", None]},
+        {"layers": [{"position": None, "title": "Nav"}]},
+        {"layers": [{"position": "x", "title": "Nav"}]},
+        {"layers": [{"position": 1, "title": 7}]},
+        {"layers": [{"title": "Nav"}]},
+    ],
+)
+def test_diff_malformed_old_layer_entries_are_ignored(layout_diff, meta):
+    out = layout_diff(FOUR, meta, [base_keys(), edited(NAV), SYM, FUN], FOUR_NAMES)
+    assert out == "- **Nav** (L0.0): `←` → `Home`"
+
+
+def test_sync_survives_a_failing_summary_and_says_so(sync_repo, tmp_path):
+    (sync_repo / "scripts/oryx_layout.py").write_text("raise RuntimeError('boom')\n")
+    temp_git(sync_repo, "commit", "-qam", "break the summary")
+    res = sync(sync_repo, tmp_path, make_keymap([base_keys(), NEW, SYM, FUN]), FOUR_NAMES)
+    assert res.returncode == 0, res.stderr
+    assert "warning:" in res.stderr and "summary" in res.stderr
+    body = subprocess.run(["git", "-C", str(sync_repo), "log", "-1", "oryx", "--format=%B"], capture_output=True, text=True, check=True).stdout
+    assert "summary unavailable" in body
+
+
+# --- diff: second review (#12) -----------------------------------------------------
+
+
+def moving_duals(layers: list[list[str]]) -> str:
+    """An export whose DUAL_FUNC_1 holds with layer_move, the layer action Oryx's dances use."""
+    return export(layers).replace("layer_on(3)", "layer_move(3)").replace("layer_off(3)", "layer_move(3)")
+
+
+def two_duals_as_dances() -> str:
+    """FOUR with both of base_keys()'s dual-function keys written as the dances they equal."""
+    keys = edited(edited(base_keys(), 14, "TD(DANCE_0)"), 41, "TD(DANCE_1)")
+    return export([keys, NAV, SYM, FUN]) + dances(DANCE_0=("KC_DLR", "KC_LEFT_GUI", "", ""), DANCE_1=("KC_RIGHT_CTRL", "layer_move(3)", "", ""))
+
+
+def test_diff_tap_dances_becoming_dual_functions_are_counted_once(layout_diff):
+    out = layout_diff(two_duals_as_dances(), FOUR_NAMES, moving_duals(FOUR), FOUR_NAMES)
+    assert out == "- 2 tap dances became dual-function keys (same tap and hold; timing differs)"
+
+
+def test_diff_dual_functions_becoming_tap_dances_are_counted_once(layout_diff):
+    out = layout_diff(moving_duals(FOUR), FOUR_NAMES, two_duals_as_dances(), FOUR_NAMES)
+    assert out == "- 2 dual-function keys became tap dances (same tap and hold; timing differs)"
+
+
+def test_diff_timing_line_survives_the_limit(layout_diff):
+    rewritten = [k.replace("KC_LEFT", "KC_HOME").replace("KC_DOWN", "KC_END") for k in NAV]
+    old = two_duals_as_dances()
+    out = layout_diff(old, FOUR_NAMES, moving_duals([base_keys(), rewritten, SYM, FUN]), FOUR_NAMES, "--limit", "1").splitlines()
+    assert out == [
+        "- 2 tap dances became dual-function keys (same tap and hold; timing differs)",
+        "- **Nav** (L0.0): `←` → `Home`",
+        "- …and 1 more key changes",
+    ]
+
+
+def test_diff_a_new_dance_with_new_behaviour_is_not_counted(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_DLR", "KC_EXLM", "", "")))
+    assert "timing" not in layout_diff(old, FOUR_NAMES, FOUR, FOUR_NAMES)
+
+
+def test_diff_renumbers_have_no_timing_line(layout_diff):
+    body = ("KC_DLR", "KC_LEFT_GUI", "", "")
+    old = danced("TD(DANCE_0)", dances(DANCE_0=body))
+    new = danced("TD(DANCE_4)", dances(DANCE_4=body))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "No keymap changes."
+    src = make_keymap(FOUR)
+    assert layout_diff(src, FOUR_NAMES, renumber_duals(src), FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_transparent_blank_before_a_blocked_blank(layout_diff):
+    """Both are blank, but the new layer isn't the KC_NO layer that was already there."""
+    old = [base_keys(), NAV, SYM, FUN, filler("KC_NO")]
+    new = [base_keys(), NAV, SYM, FUN, filler(), filler("KC_NO")]
+    assert layout_diff(old, PLAIN, new, PLAIN) == "- Layer added: **Layer 4** (position 4)"
+
+
+def test_diff_swapping_outer_layers_moves_those_two(layout_diff):
+    """Sym sits between them and never left position 2, so it isn't "moved 2 → 2"."""
+    new = export([base_to(nav=3, sym=2), FUN, SYM, NAV], 1)
+    out = layout_diff(FOUR, FOUR_NAMES, new, titles("Base", "Fun", "Sym", "Nav"))
+    assert out.splitlines() == ["- Layer moved: **Fun** (position 3 → 1)", "- Layer moved: **Nav** (position 1 → 3)"]
+
+
+@pytest.mark.parametrize("key", ["TD(DANCE_0)", "LSFT(TD(DANCE_0))"])
+def test_diff_a_dance_that_presses_itself(layout_diff, key):
+    src = danced("TD(DANCE_0)", dances(DANCE_0=(key, "KC_B", "", "")))
+    assert layout_diff(src, FOUR_NAMES, src, FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_dances_that_press_each_other(layout_diff):
+    src = danced("TD(DANCE_0)", dances(DANCE_0=("TD(DANCE_1)", "KC_B", "", ""), DANCE_1=("TD(DANCE_0)", "KC_B", "", "")))
+    assert layout_diff(src, FOUR_NAMES, src, FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_a_dual_function_that_presses_itself(layout_diff):
+    src = make_keymap(FOUR).replace("register_code16(KC_DLR)", "register_code16(DUAL_FUNC_0)")
+    assert layout_diff(src, FOUR_NAMES, src, FOUR_NAMES) == "No keymap changes."
+
+
+PLAIN_DANCE = dances(DANCE_0=("KC_A", "KC_B", "", ""))
+NOT_PLAIN = {
+    "code before the switch": lambda c: c.replace("    switch (", "    my_code();\n    switch (", 1),
+    "code after the step": lambda c: c.replace("dance_step(state);", "dance_step(state); my_code();", 1),
+    "no step": lambda c: c.replace("    dance_state[0].step = dance_step(state);\n", "", 1),
+    "another step function": lambda c: c.replace("= dance_step(state)", "= my_step(state)", 1),
+    "another dance's step": lambda c: c.replace("dance_state[0].step = dance_step", "dance_state[1].step = dance_step", 1),
+    "a switch on something else": lambda c: c.replace("switch (dance_state[0].step)", "switch (other)", 1),
+    "a missing break": lambda c: c.replace("case SINGLE_TAP: register_code16(KC_A); break;", "case SINGLE_TAP: register_code16(KC_A);", 1),
+    "no double tap": lambda c: re.sub(r" *case DOUBLE_TAP:.*\n", "", c, count=1),
+    "no double single tap": lambda c: re.sub(r" *case DOUBLE_SINGLE_TAP:.*\n", "", c, count=1),
+    "a tapped hold": lambda c: c.replace("case SINGLE_HOLD: register_code16(KC_B)", "case SINGLE_HOLD: tap_code16(KC_B)", 1),
+    "a tapped tap": lambda c: c.replace("case SINGLE_TAP: register_code16(KC_A)", "case SINGLE_TAP: tap_code16(KC_A)", 1),
+    "a call hidden in an argument": lambda c: c.replace("case SINGLE_HOLD: register_code16(KC_B);", "case SINGLE_HOLD: register_code16(KC_B), my_code();", 1),
+    "cases out of order": lambda c: c.replace("case SINGLE_TAP:", "case X_TAP:", 1).replace("case SINGLE_HOLD:", "case SINGLE_TAP:", 1).replace("case X_TAP:", "case SINGLE_HOLD:", 1),
+}
+
+
+@pytest.mark.parametrize("name", NOT_PLAIN)
+def test_dance_code_that_is_not_plain_is_not_read(name):
+    assert ol.parse_keymap(danced("TD(DANCE_0)", PLAIN_DANCE)).dances
+    assert ol.parse_keymap(danced("TD(DANCE_0)", NOT_PLAIN[name](PLAIN_DANCE))).dances == {}
+
+
+@pytest.mark.parametrize("name", NOT_PLAIN)
+def test_diff_unread_dance_is_never_equal_to_a_plain_one(layout_diff, name):
+    old = danced("TD(DANCE_0)", PLAIN_DANCE)
+    new = danced("TD(DANCE_0)", NOT_PLAIN[name](PLAIN_DANCE))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "- **Base** (L1.2): `A/B` → `Dance 0`"
+
+
+@pytest.mark.parametrize("name", NOT_PLAIN)
+def test_diff_edit_in_an_unread_dance_is_reported(layout_diff, name):
+    old = danced("TD(DANCE_0)", NOT_PLAIN[name](PLAIN_DANCE))
+    new = danced("TD(DANCE_0)", NOT_PLAIN[name](PLAIN_DANCE).replace("KC_B", "KC_C"))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "- **Base** (L1.2): `Dance 0` → `Dance 0`  (tap dance body changed)"
+
+
+def test_diff_unread_dance_renumber_is_no_change(layout_diff):
+    broken = NOT_PLAIN["code before the switch"]
+    old = danced("TD(DANCE_0)", broken(PLAIN_DANCE))
+    new = danced("TD(DANCE_3)", broken(PLAIN_DANCE).replace("dance_state[0]", "dance_state[3]").replace("dance_0", "dance_3").replace("DANCE_0", "DANCE_3"))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == "No keymap changes."
+
+
+def test_diff_raw_flag_does_not_repeat_equal_identifiers(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_EQUAL", "KC_ESCAPE", "", "")))
+    new = danced("TD(DANCE_0)", dances(DANCE_0=("KC_EQUAL", "KC_HOME", "", "")))
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES, "--raw") == "- **Base** (L1.2): `=/Esc` → `=/Home`"
+
+
+def test_diff_same_legend_same_code_gets_no_empty_suffix(layout_diff):
+    """The key is untouched, but the layer it reaches only exists now: no raw `TG(9)` → `TG(9)`."""
+    old = [edited(base_keys(), 0, "TG(4)"), NAV, SYM, FUN]
+    new = [edited(base_keys(), 0, "TG(4)"), NAV, SYM, FUN, NEW]
+    out = layout_diff(old, PLAIN, new, PLAIN)
+    assert "- **Layer 0** (L0.0): `TG Layer 4` → `TG Layer 4`" in out and "`TG(4)`" not in out
+
+
+@pytest.mark.parametrize("meta", ['{"layers": [{"position": Infinity, "title": "Nav"}]}', '{"layers": [{"position": NaN, "title": "Nav"}]}'])
+def test_diff_non_finite_position_is_ignored(layout_diff, meta):
+    out = layout_diff(FOUR, meta, [base_keys(), edited(NAV), SYM, FUN], FOUR_NAMES)
+    assert out == "- **Nav** (L0.0): `←` → `Home`"
+
+
+def test_diff_non_dict_meta_flag(tmp_path, capsys):
+    km, meta = tmp_path / "keymap.c", tmp_path / "meta.json"
+    km.write_text(make_keymap(FOUR))
+    meta.write_text("[1, 2]")
+    assert ol.main(["diff", str(km), str(km), "--meta", str(meta)]) == 0
+    assert capsys.readouterr().out.strip() == "No keymap changes."
+
+
+# --- keys that press themselves, in lint and render (#12) ---------------------------
+
+SELF_PRESSING = {
+    "tap": lambda src: src.replace("register_code16(KC_DLR)", "register_code16(DUAL_FUNC_0)"),
+    "hold": lambda src: src.replace("register_code16(KC_LEFT_GUI)", "register_code16(DUAL_FUNC_0)"),
+    "each other": lambda src: src.replace("register_code16(KC_DLR)", "register_code16(DUAL_FUNC_1)").replace("register_code16(KC_RIGHT_CTRL)", "register_code16(DUAL_FUNC_0)"),
+}
+
+
+@pytest.mark.parametrize("how", SELF_PRESSING)
+def test_lint_survives_a_dual_function_that_presses_itself(tmp_path, how):
+    km = tmp_path / "keymap.c"
+    km.write_text(SELF_PRESSING[how](make_keymap(FOUR)))
+    assert ol.main(["lint", "--keymap", str(km), "--meta", "/x"]) in (0, 1)
+
+
+@pytest.mark.parametrize("how", SELF_PRESSING)
+def test_render_survives_a_dual_function_that_presses_itself(tmp_path, how):
+    km = tmp_path / "keymap.c"
+    km.write_text(SELF_PRESSING[how](make_keymap(FOUR)))
+    assert ol.main(["render", "--keymap", str(km), "--meta", "/x", "--out", str(tmp_path / "docs"), "--no-svg"]) == 0
+    assert (tmp_path / "docs/keymap.md").exists()
+
+
+@pytest.mark.parametrize("how", SELF_PRESSING)
+def test_diff_survives_a_dual_function_that_presses_itself(layout_diff, how):
+    src = SELF_PRESSING[how](make_keymap(FOUR))
+    assert layout_diff(src, FOUR_NAMES, src, FOUR_NAMES) == "No keymap changes."
+
+
+def test_targets_still_follow_a_dual_function_hold(four_layers):
+    assert ol.Labeller(four_layers).targets("DUAL_FUNC_1") == [("MO", 3)]
+
+
+def test_render_non_dict_meta(tmp_path):
+    km, meta = tmp_path / "keymap.c", tmp_path / "meta.json"
+    km.write_text(make_keymap(FOUR))
+    meta.write_text("[1, 2]")
+    assert ol.main(["render", "--keymap", str(km), "--meta", str(meta), "--out", str(tmp_path / "docs"), "--no-svg"]) == 0
+
+
+def test_diff_dance_body_change_with_equal_legends_says_so(layout_diff):
+    old = danced("TD(DANCE_0)", dances(DANCE_0=("KC_1", "KC_LSFT", "", "")))
+    new = danced("TD(DANCE_0)", dances(DANCE_0=("KC_1", "KC_RSFT", "", "")))
+    expected = "- **Base** (L1.2): `1/Shift` → `1/Shift`  (tap dance body changed)"
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == expected
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES, "--raw") == expected
+
+
+def test_diff_dual_function_body_change_with_equal_legends_says_so(layout_diff):
+    old = export(FOUR).replace("KC_LEFT_GUI", "KC_LSFT")
+    new = export(FOUR).replace("KC_LEFT_GUI", "KC_RSFT")
+    expected = "- **Base** (L1.2): `$/Shift` → `$/Shift`  (dual-function body changed)"
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES) == expected
+    assert layout_diff(old, FOUR_NAMES, new, FOUR_NAMES, "--raw") == expected
+
+
+def test_diff_renumbered_body_change_with_equal_legends_says_so(layout_diff):
+    old = export(FOUR).replace("KC_LEFT_GUI", "KC_LSFT")
+    new = renumber_duals(export(FOUR).replace("KC_LEFT_GUI", "KC_RSFT"))
+    out = layout_diff(old, FOUR_NAMES, new, FOUR_NAMES)
+    assert out == "- **Base** (L1.2): `$/Shift` → `$/Shift`  (dual-function body changed)"
+    with_raw = layout_diff(old, FOUR_NAMES, new, FOUR_NAMES, "--raw")
+    assert with_raw == "- **Base** (L1.2): `$/Shift` → `$/Shift`  (`DUAL_FUNC_0` → `DUAL_FUNC_1`)  (dual-function body changed)"
+
+
+# --- diff: layers with different key counts (#12) -----------------------------------
+
+
+def grown(src: str) -> str:
+    """Every layer one key longer, as a board with more keys would give."""
+    return src.replace("\n  ),", ", KC_F13\n  ),")
+
+
+SIZES = ["Base", "Nav", "Sym", "Fun"]
+
+
+def test_diff_more_keys_is_reported_per_layer(layout_diff):
+    out = layout_diff(export(FOUR), FOUR_NAMES, grown(export(FOUR)), FOUR_NAMES)
+    assert out.splitlines() == [f"- **{name}**: 52 keys → 53 keys (keyboard or layout changed)" for name in SIZES]
+
+
+def test_diff_fewer_keys_is_reported_per_layer(layout_diff):
+    out = layout_diff(grown(export(FOUR)), FOUR_NAMES, export(FOUR), FOUR_NAMES)
+    assert out.splitlines() == [f"- **{name}**: 53 keys → 52 keys (keyboard or layout changed)" for name in SIZES]
+
+
+def test_diff_one_layer_longer_never_says_no_changes(layout_diff):
+    new = export(FOUR).replace("OSM(MOD_LSFT)\n", "OSM(MOD_LSFT), KC_TRANSPARENT\n")
+    assert layout_diff(FOUR, FOUR_NAMES, new, FOUR_NAMES) == "- **Base**: 52 keys → 53 keys (keyboard or layout changed)"
+
+
+def test_diff_shared_positions_are_still_compared(layout_diff):
+    new = grown(export([edited(base_keys(), 0), NAV, SYM, FUN]))
+    out = layout_diff(FOUR, FOUR_NAMES, new, FOUR_NAMES).splitlines()
+    assert out[:4] == [f"- **{name}**: 52 keys → 53 keys (keyboard or layout changed)" for name in SIZES]
+    assert out[4:] == ["- **Base** (L0.0): `Q` → `Home`"]
+
+
+def test_diff_key_count_line_survives_the_limit(layout_diff):
+    new = grown(export([edited(edited(base_keys(), 0), 1), NAV, SYM, FUN]))
+    out = layout_diff(FOUR, FOUR_NAMES, new, FOUR_NAMES, "--limit", "1").splitlines()
+    assert out[:4] == [f"- **{name}**: 52 keys → 53 keys (keyboard or layout changed)" for name in SIZES]
+    assert out[4:] == ["- **Base** (L0.0): `Q` → `Home`", "- …and 1 more key changes"]
+
+
+def test_diff_unnamed_layers_with_new_counts_pair_by_index(layout_diff):
+    plain = titles("Layer", "Layer", "Layer", "Layer")
+    out = layout_diff(FOUR, plain, grown(export(FOUR)), plain)
+    assert out.splitlines() == [f"- **Layer {i}**: 52 keys → 53 keys (keyboard or layout changed)" for i in range(4)]
+
+
+def keymap_of(keys: list[str], title: str) -> ol.Keymap:
+    return ol.Keymap("LAYOUT", [ol.Layer(0, "0", keys, title, title)])
+
+
+@pytest.mark.parametrize(
+    "new,paired",
+    [
+        (["KC_A", "KC_B", "KC_C", "KC_D"], True),  # 3 of 4 match
+        (["KC_A", "KC_B", "KC_C", "KC_D", "KC_E", "KC_F", "KC_G", "KC_H"], False),  # 3 of 8: not "all of the 3 shared"
+    ],
+)
+def test_pairing_counts_keys_only_one_side_has(new, paired):
+    old_km, new_km = keymap_of(["KC_A", "KC_B", "KC_C"], "One"), keymap_of(new, "Two")
+    assert ol.pair_layers(old_km, new_km, ol.Labeller(old_km), ol.Labeller(new_km)) == ({0: 0} if paired else {})

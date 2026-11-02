@@ -3,7 +3,8 @@
 
 Subcommands:
   render  keymap.c + keyboard info -> docs/keymap.md, keymap.yaml, keymap.svg
-  diff    key-by-key changes between two keymap.c versions (files or git refs)
+  diff    layers added, removed, renamed or moved, and key-by-key changes, between
+          two keymap.c versions (files or git refs)
   lint    sanity checks: unreachable layers, dangling layer keys, traps
   parse   dump the parsed keymap as JSON (debugging)
 
@@ -26,8 +27,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass, field
+from itertools import zip_longest
 from pathlib import Path
 
 # --------------------------------------------------------------------------
@@ -115,7 +117,8 @@ class Layer:
     index: int
     ident: str
     keys: list[str]
-    name: str = ""
+    name: str = ""  # always set, unique, and may depend on the position
+    title: str = ""  # what it is called in Oryx; "" when unnamed, so it doesn't shift with position
 
 
 @dataclass
@@ -130,6 +133,8 @@ class Keymap:
     combos: list[str] = field(default_factory=list)  # what each COMBO(keys, result) sends
     intercepted: set[str] = field(default_factory=set)  # keys process_record_user swallows, see _intercepted()
     i18n: dict[str, str] = field(default_factory=dict)  # name -> value, from the i18n.h beside keymap.c
+    dances: dict[str, tuple[str, str, str, str]] = field(default_factory=dict)  # DANCE_n -> see _parse_dance()
+    dance_code: dict[str, str] = field(default_factory=dict)  # DANCE_n -> its code, for dances that can't be read
 
     def layer_index(self, arg: str) -> int | None:
         """Layer number for a layer argument: a digit, or a name such as _LOWER."""
@@ -140,6 +145,11 @@ class Keymap:
             if layer.ident == arg:
                 return layer.index
         return None
+
+    def dance(self, raw: str) -> tuple[str, str, str, str] | None:
+        """What a TD(DANCE_n) key does, when its code could be read."""
+        c = call(self.resolve(raw.strip()))
+        return self.dances.get(c[1][0]) if c and c[0] == "TD" and len(c[1]) == 1 else None
 
     def resolve(self, kc: str, depth: int = 0) -> str:
         """Expand simple object-like #defines (e.g. DUAL_FUNC_0 -> LT(14, KC_8))."""
@@ -211,6 +221,70 @@ def _compact(kc: str) -> str:
     return "".join(kc.split())
 
 
+_DANCE_CALL = re.compile(r"\b(register_code16|tap_code16|layer_move)\(\s*([^;]+?)\s*\)\s*;")
+_DANCE_PRESS = ("register_code16",)
+_DANCE_ACTION = (_DANCE_PRESS, ("layer_move",))
+# The cases of an Oryx dance, in order, and the calls each can make.
+_DANCE_STEPS = {
+    "SINGLE_TAP": (_DANCE_PRESS,),
+    "SINGLE_HOLD": _DANCE_ACTION,
+    "DOUBLE_TAP": _DANCE_ACTION + (_DANCE_PRESS * 2,),
+    "DOUBLE_HOLD": _DANCE_ACTION,
+    "DOUBLE_SINGLE_TAP": (("tap_code16", "register_code16"),),
+}
+
+
+def _single_arg(arg: str) -> bool:
+    """One argument: `KC_B), my_code(` is what a greedy match makes of a second statement."""
+    depth = 0
+    for ch in arg:
+        depth += (ch == "(") - (ch == ")")
+        if depth < 0 or (ch == "," and depth == 0):
+            return False
+    return depth == 0
+
+
+def _function_body(src: str, name: str) -> str | None:
+    """A dance function's code, one-spaced, without the dance's own number: that number says
+    nothing about what it does. A dance reaching into another's state keeps the number."""
+    m = re.search(rf"\b{name}\s*\([^)]*\)\s*\{{", src)
+    try:
+        body = balanced(src, m.end() - 1)[0] if m else ""
+    except ValueError:
+        return None
+    return " ".join(body.replace(f"dance_state[{re.sub(r'[^0-9]', '', name)}]", "dance_state[]").split()) or None
+
+
+def _parse_dance(body: str) -> tuple[str, str, str, str] | None:
+    """(tap, hold, double tap, double hold) from the body of Oryx's dance_N_finished. A double
+    tap of "" means two plain presses of the tap, which is what Oryx writes when none is set.
+    None for anything else: code Oryx doesn't write can't be compared by reading its actions.
+    Only dance_N_finished is read: on_dance_N and dance_N_reset are generated from the same keys."""
+    m = re.fullmatch(r"dance_state\[\]\.step = dance_step\(state\); switch \(dance_state\[\]\.step\) \{(.*)\}", body)
+    if not m:
+        return None
+    parts = re.split(r"\bcase\s+(\w+)\s*:", m.group(1))
+    labels = parts[1::2]
+    if parts[0].strip() or not {"SINGLE_TAP", "DOUBLE_TAP", "DOUBLE_SINGLE_TAP"} <= set(labels):
+        return None
+    if labels != [step for step in _DANCE_STEPS if step in labels]:
+        return None
+    cases: dict[str, list[str]] = {}
+    for label, code in zip(labels, parts[2::2]):
+        calls = _DANCE_CALL.findall(code)
+        ending = "" if label == labels[-1] else "break;"
+        if tuple(fn for fn, _ in calls) not in _DANCE_STEPS[label] or _DANCE_CALL.sub("", code).strip() != ending:
+            return None
+        if not all(_single_arg(arg) for _, arg in calls):
+            return None
+        cases[label] = [arg if fn.endswith("code16") else f"{_LAYER_CALLS[fn]}({arg})" for fn, arg in calls]
+    tap = cases["SINGLE_TAP"]
+    double = cases["DOUBLE_TAP"]
+    if cases["DOUBLE_SINGLE_TAP"] != tap + tap or (len(double) == 2 and double != tap + tap):
+        return None
+    return tap[0], cases.get("SINGLE_HOLD", [""])[0], "" if double == tap + tap else double[0], cases.get("DOUBLE_HOLD", [""])[0]
+
+
 def parse_keymap(text: str) -> Keymap:
     src = strip_comments(text)
 
@@ -277,19 +351,37 @@ def parse_keymap(text: str) -> Keymap:
 
     km = Keymap(layout_macro=layout_macro, layers=layers, row_sizes=row_sizes, defines=defines, dual_funcs=dual, ledmap=ledmap, tri_layers=tri, combos=combos)
     km.intercepted = {_compact(km.resolve(label)) for label in _intercepted(src)}
+    for m in re.finditer(r"\[\s*(\w+)\s*\]\s*=\s*ACTION_TAP_DANCE_FN_ADVANCED\(\s*\w+\s*,\s*(\w+)\s*,", src):
+        body = _function_body(src, m.group(2))
+        dance = _parse_dance(body) if body else None
+        if dance:
+            km.dances[m.group(1)] = dance
+        elif body:
+            km.dance_code[m.group(1)] = body
     return km
+
+
+def layer_entries(meta: dict | None) -> list[tuple[int, str]]:
+    """(position, title) for the well-formed `layers` entries in Oryx metadata."""
+    entries = meta.get("layers") if isinstance(meta, dict) else None
+    out = []
+    for entry in entries if isinstance(entries, list) else []:
+        title = entry.get("title") or "" if isinstance(entry, dict) else None
+        try:
+            if isinstance(title, str):
+                out.append((int(entry["position"]), title.strip()))
+        except (KeyError, OverflowError, TypeError, ValueError):
+            pass
+    return out
 
 
 def assign_layer_names(km: Keymap, meta: dict | None) -> None:
     """Name layers from Oryx metadata; fall back to "Layer 0", "Layer 1", ... Names are unique."""
-    titles = {}
-    for entry in (meta or {}).get("layers", []) or []:
-        title = (entry.get("title") or "").strip()
-        if title and title.lower() != "layer":
-            titles[int(entry.get("position", -1))] = title
+    titles = {position: title for position, title in layer_entries(meta) if title and title.lower() != "layer"}
     seen: set[str] = set()
     for layer in km.layers:
-        name = titles.get(layer.index) or (layer.ident if not layer.ident.isdigit() else f"Layer {layer.index}")
+        layer.title = titles.get(layer.index) or ("" if layer.ident.isdigit() else layer.ident)
+        name = layer.title or f"Layer {layer.index}"
         if name in seen:
             name = f"{name} {layer.index}"
         seen.add(name)
@@ -416,6 +508,16 @@ def read_i18n(keymap: str) -> dict[str, str]:
         return {}
 
 
+def read_meta(keymap: str) -> dict:
+    """The .oryx.json beside a keymap.c path or REF:path; old revisions may have none."""
+    ref, sep, path = keymap.rpartition(":")
+    try:
+        meta = json.loads(read_source(f"{ref}{sep}{Path(path).with_name('.oryx.json')}"))
+    except (SystemExit, OSError, ValueError):
+        return {}
+    return meta if isinstance(meta, dict) else {}
+
+
 def i18n_legends(i18n: dict[str, str]) -> dict[str, str]:
     """Legends for an i18n.h. Oryx has its own names, so go by each define's value, in
     the header of that prefix that agrees best with what the names say (FR_ is four
@@ -490,12 +592,18 @@ LAYER_FUNCS = {
 }
 
 
+def is_layer_call(fn: str, args: list[str]) -> bool:
+    """A key function whose first argument is a layer."""
+    return (fn in LAYER_FUNCS and len(args) == 1) or (fn in ("LT", "LM") and len(args) == 2)
+
+
 class Labeller:
     def __init__(self, km: Keymap, style: str = "pc"):
         self.km = km
         self.mods = MOD_TEXT[style]
         self.names = {l.index: l.name or f"Layer {l.index}" for l in km.layers}
         self.i18n = i18n_legends(km.i18n)
+        self.expanding: set[str] = set()  # dual-function keys being drawn, in case one presses itself
 
     def layer(self, arg: str) -> str:
         idx = self.km.layer_index(arg)
@@ -520,15 +628,20 @@ class Labeller:
             return "Meh"
         return self.mods["join"].join(self.mods[m] for m in MOD_ORDER if m in mods)
 
+    def locale(self, kc: str) -> str | None:
+        """The character a locale keycode types, from i18n.h or else QMK's headers."""
+        if kc in self.i18n:
+            return self.i18n[kc]
+        prefix, _, name = kc.partition("_")
+        return LOCALES.get(prefix, {}).get(name)
+
     def basic(self, kc: str) -> str:
         kc = kc.strip()
         if kc in BASIC:
             return BASIC[kc]
-        if kc in self.i18n:
-            return self.i18n[kc]
-        prefix, _, name = kc.partition("_")
-        if name in LOCALES.get(prefix, {}):
-            return LOCALES[prefix][name]
+        typed = self.locale(kc)
+        if typed:
+            return typed
         kc = kc.removeprefix("KC_")
         if kc in MOD_KEYS:
             return self.mods[MOD_KEYS[kc]]
@@ -544,17 +657,33 @@ class Labeller:
             return "Colour"
         return kc.replace("_", " ").title() if len(kc) > 3 else kc
 
+    def tap_hold(self, tap: str, hold: str) -> Legend:
+        hold_lg = self.legend(hold) if hold else Legend()
+        kind = "layer" if hold_lg.kind == "layer" else "mod"
+        return Legend(self.legend(tap).text(), hold_lg.tap if hold_lg.kind == "layer" else hold_lg.text(), kind)
+
+    def spelled_out(self, raw: str) -> str:
+        """Legend text, except that a tap dance says what it does instead of its number."""
+        dance = self.km.dance(raw)
+        if not dance:
+            return self.legend(raw).text()
+        tap, hold, double, double_hold = dance
+        text = self.tap_hold(tap or "KC_NO", hold).text()
+        text += f", double-tap {self.legend(double).text()}" if double else ""
+        return text + (f", double-hold {self.legend(double_hold).text()}" if double_hold else "")
+
     def legend(self, raw: str) -> Legend:
         kc = raw.strip()
         if kc in ("KC_TRANSPARENT", "KC_TRNS", "_______", "TRANSPARENT"):
             return Legend(kind="trans")
         if kc in ("KC_NO", "XXXXXXX"):
             return Legend(kind="none")
-        if kc in self.km.dual_funcs:
-            tap, hold = self.km.dual_funcs[kc]
-            hold_lg = self.legend(hold) if hold else Legend()
-            kind = "layer" if hold_lg.kind == "layer" else "mod"
-            return Legend(self.legend(tap).text(), hold_lg.tap if hold_lg.kind == "layer" else hold_lg.text(), kind)
+        if kc in self.km.dual_funcs and kc not in self.expanding:
+            self.expanding.add(kc)
+            try:
+                return self.tap_hold(*self.km.dual_funcs[kc])
+            finally:
+                self.expanding.discard(kc)
         kc = self.km.resolve(kc)
         c = call(kc)
         if c is None:
@@ -591,11 +720,13 @@ class Labeller:
             return Legend(f"{prefix}{sep}{self.legend(inner).text()}")
         return Legend(kc.replace("_", " "), "", "special")
 
-    def targets(self, raw: str) -> list[tuple[str, int]]:
+    def targets(self, raw: str, seen: frozenset = frozenset()) -> list[tuple[str, int]]:
         """Layer-changing behaviour of a key: [(func, layer index)]."""
         raw = raw.strip()
         if raw in self.km.dual_funcs:
-            return [t for part in self.km.dual_funcs[raw] if part for t in self.targets(part)]
+            if raw in seen:  # it presses itself
+                return []
+            return [t for part in self.km.dual_funcs[raw] if part for t in self.targets(part, seen | {raw})]
         if raw.startswith("DUAL_FUNC_"):
             return []  # unparsed Oryx dual function: its LT() layer is a dummy
         kc = self.km.resolve(raw)
@@ -603,7 +734,7 @@ class Labeller:
         if not c or _compact(kc) in self.km.intercepted:
             return []
         fn, args = c
-        if (fn in LAYER_FUNCS and len(args) == 1) or (fn in ("LT", "LM") and len(args) == 2):
+        if is_layer_call(fn, args):
             idx = self.km.layer_index(args[0])
             if idx is not None:
                 return [(fn, idx)]
@@ -1134,7 +1265,8 @@ def read_source(spec: str) -> str:
 
 def load_json(path: str | None) -> dict:
     if path and Path(path).exists():
-        return json.loads(Path(path).read_text(encoding="utf-8"))
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
     return {}
 
 
@@ -1381,33 +1513,239 @@ def cmd_render(args) -> int:
     return 0
 
 
+def behaviour(lab: Labeller, raw: str, layer_id=lambda idx: "layer", seen: frozenset = frozenset()) -> str:
+    """What a key does, comparable between revisions. A DUAL_FUNC_n becomes its tap and hold,
+    so renumbering the defines changes nothing. So does a TD(DANCE_n) with no double tap or
+    double hold of its own, which is the same key: Oryx writes a tap-hold either way. Other
+    dances go by their actions, so their number means nothing either. `layer_id` says which
+    layer a layer key means; the default treats all layers alike, for comparing content
+    before layers are paired. `seen` stops a key that presses itself."""
+    km = lab.km
+    kc = raw.strip()
+    if kc in seen:
+        return _compact(kc)
+
+    def parts(fn: str, *keys: str) -> str:
+        return f"{fn}({','.join(behaviour(lab, key, layer_id, seen | {kc}) for key in keys)})"
+
+    if kc in km.dual_funcs:
+        return parts("DUAL", *km.dual_funcs[kc])
+    dance = km.dance(kc)
+    if dance:
+        tap, hold, double, double_hold = dance
+        return parts("TD", tap or "KC_NO", hold, double, double_hold) if double or double_hold else parts("DUAL", tap or "KC_NO", hold)
+    unparsed_dual = kc.startswith("DUAL_FUNC_")
+    kc = km.resolve(kc)
+    if unparsed_dual or _compact(kc) in km.intercepted:  # any layer in there is a dummy
+        return _compact(kc)
+    c = call(kc)
+    if c is None:
+        return "|".join(sorted(_compact(mod) for mod in kc.split("|"))) if "|" in kc else lab.locale(kc) or _compact(kc)
+    fn, args = c
+    if fn == "TD" and len(args) == 1 and args[0] in km.dance_code:
+        return f"TD({km.dance_code[args[0]]})"
+    head = []
+    if is_layer_call(fn, args):
+        idx = km.layer_index(args[0])
+        head, args = [_compact(args[0]) if idx is None else str(layer_id(idx))], args[1:]
+    return f"{fn}({','.join(head + [behaviour(lab, arg, layer_id, seen) for arg in args])})"
+
+
+def pair_layers(old: Keymap, new: Keymap, lo: Labeller, ln: Labeller) -> dict[int, int]:
+    """Which new layer each old layer became: {old index: new index}. The rest were removed
+    or added.
+
+    First the layers that can only be one thing: keys found once on each side, then a name
+    left once on each side. Those that stayed in order fence off gaps, and identical layers
+    (blanks, copies) pair inside a gap, in order, the same keycodes, then the same name, then
+    the same position breaking ties: a new blank layer is not the old blank further along.
+    What is left goes to the best of these, ties in layer order:
+
+      0. same content and same name
+      1. same content, not blank (a rename)
+      2. same name, the closest match first when a name is used twice
+      3. similar: over half of the positions that hold a key on either side match
+      4. same position, unless both sides are named and differ in keys (a replacement)
+
+    A blank key counts for nothing, or all sparse layers would look alike. Fallback names
+    such as "Layer 3" are positions, so only Oryx names count.
+    """
+
+    def content(lab: Labeller, layer: Layer) -> tuple[str, ...]:
+        return tuple("" if lab.legend(k).kind in ("trans", "none") else behaviour(lab, k) for k in layer.keys)
+
+    before = {l.index: content(lo, l) for l in old.layers}
+    after = {l.index: content(ln, l) for l in new.layers}
+
+    def identical(o: Layer, n: Layer) -> bool:
+        a = before[o.index]
+        return a == after[n.index] and (any(a) or o.title == n.title or not (o.title and n.title))
+
+    def rank(o: Layer, n: Layer) -> tuple[int, float] | None:
+        a, b = before[o.index], after[n.index]
+        same_name = o.title == n.title
+        used = sum(1 for x, y in zip_longest(a, b, fillvalue="") if x or y)  # a key only one side has counts
+        share = sum(1 for x, y in zip(a, b) if (x or y) and x == y) / used if used else 0
+        if a == b:
+            if same_name:
+                return 0, 1
+            if any(a):
+                return 1, 1
+        if same_name and o.title:
+            return 2, share
+        if share > 0.5:
+            return 3, share
+        if o.index == n.index and (a == b or not (o.title and n.title)):
+            return 4, 0
+        return None
+
+    def align(olds: list[Layer], news: list[Layer]) -> list[tuple[int, int]]:
+        """The longest in-order matching of identical layers."""
+        best = [[((0, 0, 0, 0), [])] * (len(news) + 1) for _ in range(len(olds) + 1)]
+        for i, o in enumerate(olds, 1):
+            for j, n in enumerate(news, 1):
+                options = [best[i - 1][j], best[i][j - 1]]
+                if identical(o, n):
+                    (count, keys, names, places), matched = best[i - 1][j - 1]
+                    score = (count + 1, keys + (o.keys == n.keys), names + (o.title == n.title), places + (o.index == n.index))
+                    options.append((score, matched + [(o.index, n.index)]))
+                best[i][j] = max(options, key=lambda option: option[0])
+        return best[-1][-1][1]
+
+    pairs: dict[int, int] = {}
+
+    def free(km: Keymap) -> list[Layer]:
+        taken = pairs if km is old else pairs.values()
+        return [l for l in km.layers if l.index not in taken]
+
+    seen_old, seen_new = Counter(before.values()), Counter(after.values())
+    for o in old.layers:
+        for n in new.layers:
+            if before[o.index] == after[n.index] and any(before[o.index]) and seen_old[before[o.index]] == seen_new[after[n.index]] == 1:
+                pairs[o.index] = n.index
+    named_old, named_new = Counter(l.title for l in free(old)), Counter(l.title for l in free(new))
+    for o in free(old):
+        for n in free(new):
+            if o.title and o.title == n.title and named_old[o.title] == named_new[n.title] == 1:
+                pairs[o.index] = n.index
+
+    moved = moved_layers(pairs)
+    fences = sorted((oi, ni) for oi, ni in pairs.items() if oi not in moved)
+    bounds = [(-1, -1)] + fences + [(float("inf"), float("inf"))]
+    for (low_o, low_n), (high_o, high_n) in zip(bounds, bounds[1:]):
+        olds = [l for l in free(old) if low_o < l.index < high_o]
+        news = [l for l in free(new) if low_n < l.index < high_n]
+        pairs.update(align(olds, news))
+
+    candidates = []
+    for o in free(old):
+        for n in free(new):
+            r = rank(o, n)
+            if r:
+                candidates.append((r[0], -r[1], o.index != n.index, o.index, n.index))
+    for _, _, _, oi, ni in sorted(candidates):
+        if oi not in pairs and ni not in pairs.values():
+            pairs[oi] = ni
+    return pairs
+
+
+def moved_layers(pairs: dict[int, int]) -> set[int]:
+    """Old indices of the layers that changed order: all but the longest run still in order,
+    or the run leaving most layers where they were when there are several. So an insert moves
+    nothing, and a layer dragged past others is the only one that moved."""
+
+    def size(run: list[int]) -> tuple[int, int]:
+        return len(run), sum(pairs[oi] == oi for oi in run)
+
+    olds = [oi for oi, _ in sorted(pairs.items(), key=lambda p: p[1])]
+    runs: list[list[int]] = []
+    for oi in olds:
+        runs.append(max((r for r in runs if r[-1] < oi), key=size, default=[]) + [oi])
+    return set(olds) - set(max(runs, key=size, default=[]))
+
+
 def cmd_diff(args) -> int:
     old = parse_keymap(read_source(args.old))
     new = parse_keymap(read_source(args.new))
     old.i18n, new.i18n = read_i18n(args.old), read_i18n(args.new)
-    meta = load_json(args.meta)
-    assign_layer_names(old, meta)
-    assign_layer_names(new, meta)
+    # --meta describes the working tree. Each git revision, and an old file, has its own names.
+    old_meta = read_meta(args.old)
+    new_is_ref = ":" in args.new and not Path(args.new).exists()
+    new_meta = read_meta(args.new) if new_is_ref else load_json(args.meta)
+    assign_layer_names(old, old_meta)
+    assign_layer_names(new, new_meta)
     info = load_json(args.info)
     geo = Geometry.build(info, new)
     lo, ln = Labeller(old, args.style), Labeller(new, args.style)
-    olds = {l.index: l for l in old.layers}
+    olds, news = {l.index: l for l in old.layers}, {l.index: l for l in new.layers}
+    pairs = pair_layers(old, new, lo, ln)
+    survivors = sorted(pairs.items(), key=lambda p: p[1])
+
     lines: list[str] = []
     for layer in new.layers:
-        prev = olds.pop(layer.index, None)
-        if prev is None:
-            lines.append(f"- **{layer.name}**: new layer")
-            continue
-        for ki, (a, b) in enumerate(zip(prev.keys, layer.keys)):
-            la, lb = lo.legend(a).text(), ln.legend(b).text()
-            if a != b or la != lb:
+        if layer.index not in pairs.values():
+            lines.append(f"- Layer added: **{layer.name}** (position {layer.index})")
+    for layer in old.layers:
+        if layer.index not in pairs:
+            lines.append(f"- Layer removed: **{layer.name}** (position {layer.index})")
+    for oi, ni in survivors:
+        o, n = olds[oi], news[ni]
+        # Without old names there is no telling a new name from a rename.
+        if o.title != n.title and (o.title or layer_entries(old_meta)):
+            lines.append(f"- Layer renamed: **{o.name}** → **{n.name}**")
+    moved = moved_layers(pairs)
+    for oi, ni in survivors:
+        if oi in moved and oi != ni:
+            lines.append(f"- Layer moved: **{news[ni].name}** (position {oi} → {ni})")
+
+    # Layer keys on the old side read as what those layers are called now, and compare by
+    # which layer they mean: TG(2) -> TG(3) is no change when the layer itself moved there.
+    for oi in olds:
+        lo.names[oi] = ln.names[pairs[oi]] if oi in pairs else f"{lo.names[oi]} (removed)"
+
+    def old_layer(idx: int) -> str:
+        return f"@{pairs[idx]}" if idx in pairs else (f"removed {idx}" if idx in olds else f"?{idx}")
+
+    def new_layer(idx: int) -> str:
+        return f"@{idx}" if idx in news else f"?{idx}"
+
+    def is_dual(km: Keymap, raw: str) -> bool:
+        return raw.strip() in km.dual_funcs
+
+    def body_kind(km: Keymap, raw: str) -> str:
+        """Keys whose code holds what they do, so two can differ with nothing to show for it."""
+        return "tap dance" if "TD(" in km.resolve(raw) else "dual-function" if raw.startswith("DUAL_FUNC_") else ""
+
+    def note(a: str, b: str, same_legend: bool) -> str:
+        kind = body_kind(old, a) if same_legend and body_kind(old, a) == body_kind(new, b) else ""
+        raw = f"  (`{a}` → `{b}`)" if a != b and (args.raw or (same_legend and not kind)) else ""
+        return raw + (f"  ({kind} body changed)" if kind else "")
+
+    keys: list[str] = []
+    to_dual = to_dance = 0  # same actions, other mechanism: only worth one line
+    for oi, ni in survivors:
+        before_keys, after_keys = len(olds[oi].keys), len(news[ni].keys)
+        if before_keys != after_keys:  # positions past the shorter side have nothing to compare with
+            lines.append(f"- **{news[ni].name}**: {before_keys} keys → {after_keys} keys (keyboard or layout changed)")
+        for ki, (a, b) in enumerate(zip(olds[oi].keys, news[ni].keys)):
+            if behaviour(lo, a, old_layer) != behaviour(ln, b, new_layer):
+                la, lb = lo.spelled_out(a), ln.spelled_out(b)
                 where = geo.pos.get(ki, f"#{ki}")
-                lines.append(f"- **{layer.name}** ({where}): `{la}` → `{lb}`" + (f"  (`{a}` → `{b}`)" if args.raw else ""))
-    for layer in olds.values():
-        lines.append(f"- **{layer.name}**: layer removed")
-    if old.ledmap != new.ledmap:
-        changed = sorted(set(old.ledmap) ^ set(new.ledmap) | {k for k in old.ledmap if old.ledmap.get(k) != new.ledmap.get(k)})
-        lines.append(f"- LED colours changed on layer(s) {', '.join(str(c) for c in changed)}")
+                keys.append(f"- **{news[ni].name}** ({where}): `{la}` → `{lb}`" + note(a, b, la == lb))
+            else:
+                to_dual += bool(old.dance(a)) and is_dual(new, b)
+                to_dance += is_dual(old, a) and bool(new.dance(b))
+    if to_dual:
+        lines.append(f"- {to_dual} tap dance{'s' * (to_dual > 1)} became {'dual-function keys' if to_dual > 1 else 'a dual-function key'} (same tap and hold; timing differs)")
+    if to_dance:
+        lines.append(f"- {to_dance} dual-function key{'s' * (to_dance > 1)} became {'tap dances' if to_dance > 1 else 'a tap dance'} (same tap and hold; timing differs)")
+    if args.limit and len(keys) > args.limit:
+        keys[args.limit :] = [f"- …and {len(keys) - args.limit} more key changes"]
+    lines += keys
+
+    lit = [news[ni].name for oi, ni in survivors if old.ledmap.get(oi) != new.ledmap.get(ni)]
+    if lit:
+        lines.append(f"- LED colours changed on layer(s) {', '.join(lit)}")
     print("\n".join(lines) if lines else "No keymap changes.")
     return 0
 
@@ -1427,6 +1765,13 @@ def cmd_parse(args) -> int:
     json.dump(km.to_json(), sys.stdout, indent=2)
     print()
     return 0
+
+
+def key_limit(text: str) -> int:
+    value = int(text)
+    if value < 0:
+        raise argparse.ArgumentTypeError("must be 0 (no limit) or more")
+    return value
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1451,6 +1796,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("old", help="path or git REF:path, e.g. HEAD~1:layout/keymap.c")
     p.add_argument("new", nargs="?", default="layout/keymap.c")
     p.add_argument("--raw", action="store_true", help="also show raw keycodes")
+    p.add_argument("--limit", type=key_limit, default=0, metavar="N", help="list at most N key changes (layer changes are always listed)")
     common(p, keymap=False)
     p.set_defaults(func=cmd_diff)
 
